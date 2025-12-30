@@ -4,7 +4,7 @@ import datetime
 import requests
 
 # --- 1. 設定區 ---
-# 請務必填入你正確的 Webhook 網址
+# 請務必確認這裡貼入的是你完整的 Discord Webhook 網址
 DISCORD_WEBHOOK_URL = '你的Discord網址' 
 
 def send_discord(msg):
@@ -16,13 +16,13 @@ def send_discord(msg):
         return "Error"
 
 def screen_stocks():
-    print("🚀 啟動【強勢爆量】全台股掃描...")
+    print("🚀 啟動【強勢 2 倍爆量】全台股掃描...")
     dl = DataLoader()
     
     try:
         stock_info = dl.taiwan_stock_info()
         all_stocks = stock_info[stock_info['stock_id'].str.len() == 4][['stock_id', 'stock_name']].values.tolist()
-        print(f"✅ 成功載入 {len(all_stocks)} 檔股票...")
+        print(f"✅ 成功載入 {len(all_stocks)} 檔股票，開始分析...")
     except Exception as e:
         print(f"❌ 取得清單失敗: {e}")
         return
@@ -52,9 +52,9 @@ def screen_stocks():
             ma5_vol = df['Volume'].iloc[-6:-1].mean()
             vol_k = today_vol / 1000
 
-            # --- 三大核心條件 ---
-            # 1. 爆量 3 倍
-            cond1 = today_vol > (ma5_vol * 3) if ma5_vol > 0 else False
+            # --- 三大核心條件 (已將爆量改為 2 倍) ---
+            # 1. 爆量 2 倍
+            cond1 = today_vol > (ma5_vol * 2) if ma5_vol > 0 else False
             # 2. 站上所有均線 (5/10/20/60MA)
             cond2 = close > ma5 and close > ma10 and close > ma20 and close > ma60
             # 3. 日成交量 > 6000 張
@@ -68,13 +68,14 @@ def screen_stocks():
             continue
             
     report_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
-    header = f"📊 **【強勢爆量】全台股報告 ({report_time})**\n條件：1.成交量>5日均量3倍 / 2.站上所有均線 / 3.量>6000張\n"
+    header = f"📊 **【強勢 2 倍爆量】全台股報告 ({report_time})**\n條件：1.成交量>5日均量2倍 / 2.站上所有均線 / 3.量>6000張\n"
     header += "--------------------------------\n"
     
     if not hits:
-        send_discord(header + "今日無符合標的。")
+        # 即使沒有標的也會發送通知，確保你知道機器人有在運作
+        send_discord(header + "今日市場較冷，無符合標的。")
     else:
-        # 分批發送以免超過 Discord 字數限制
+        # 分批發送
         for i in range(0, len(hits), 20):
             msg = header if i == 0 else ""
             msg += "\n".join(hits[i:i+20])
@@ -84,12 +85,3 @@ def screen_stocks():
 
 if __name__ == "__main__":
     screen_stocks()
-if not hits:
-        # 如果沒選到股票，也傳個訊讓你知道機器人有在工作
-        send_discord(f"📊 **全台股篩選報告 ({report_time})**\n今日市場較冷，無符合「強勢爆量」條件之標的。")
-    else:
-        # 有標的才發送詳細清單
-        for i in range(0, len(hits), 20):
-            msg = header if i == 0 else ""
-            msg += "\n".join(hits[i:i+20])
-            send_discord(msg)
