@@ -84,3 +84,12 @@ def screen_stocks():
 
 if __name__ == "__main__":
     screen_stocks()
+if not hits:
+        # 如果沒選到股票，也傳個訊讓你知道機器人有在工作
+        send_discord(f"📊 **全台股篩選報告 ({report_time})**\n今日市場較冷，無符合「強勢爆量」條件之標的。")
+    else:
+        # 有標的才發送詳細清單
+        for i in range(0, len(hits), 20):
+            msg = header if i == 0 else ""
+            msg += "\n".join(hits[i:i+20])
+            send_discord(msg)
