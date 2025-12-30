@@ -2,9 +2,9 @@ name: Daily Stock Screen
 
 on:
   schedule:
-    # 這裡的 07:40 是國際標準時間 (UTC)，等於台灣時間 15:40 (收盤後)
+    # 台灣時間每天下午 15:40 執行
     - cron: '40 7 * * 1-5' 
-  workflow_dispatch: # 讓你可以隨時手動點擊執行測試
+  workflow_dispatch: # 讓你可以點擊按鈕手動測試
 
 jobs:
   build:
@@ -20,8 +20,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pandas FinMind requests
+          python -m pip install --upgrade pip
+          pip install pandas FinMind requests tqdm
 
       - name: Run script
         run: python myscreen.py
-
