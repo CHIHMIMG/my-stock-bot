@@ -1,26 +1,27 @@
-name: Stock_Bot_Schedule
+name: Stock_Bot_Final
 
 on:
   schedule:
-    # 每天下午 3:30 執行 (UTC 07:30)
+    # 每天下午 15:30 執行 (UTC 07:30)
     - cron: '30 7 * * *'
-  workflow_dispatch: # 這一行能讓你手動點擊執行測試
+  workflow_dispatch: # 允許手動點擊執行測試
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: 複製專案代碼
+      - name: 1. 複製專案代碼
         uses: actions/checkout@v3
 
-      - name: 設定 Python 環境
+      - name: 2. 設定 Python 3.10
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: 安裝必要工具
+      - name: 3. 安裝所有必要套件
         run: |
-          pip install yfinance pandas requests FinMind
+          python -m pip install --upgrade pip
+          pip install yfinance pandas requests FinMind tqdm lxml
 
-      - name: 執行掃描程式
-        run: python myscreen.py  # ⚠️ 請確保這檔名跟你的 Python 檔名一模一樣
+      - name: 4. 執行掃描程式
+        run: python myscreen.py
