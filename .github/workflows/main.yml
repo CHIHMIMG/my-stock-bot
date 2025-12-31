@@ -1,27 +1,26 @@
-name: Daily Stock Screen
+name: Stock_Bot_Schedule
 
 on:
   schedule:
-    # 台灣時間每天下午 15:40 執行
-    - cron: '40 7 * * 1-5' 
-  workflow_dispatch: # 讓你可以點擊按鈕手動測試
+    # 每天下午 3:30 執行 (UTC 07:30)
+    - cron: '30 7 * * *'
+  workflow_dispatch: # 這一行能讓你手動點擊執行測試
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: 複製專案代碼
         uses: actions/checkout@v3
 
-      - name: Set up Python
+      - name: 設定 Python 環境
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
-      - name: Install dependencies
+      - name: 安裝必要工具
         run: |
-          python -m pip install --upgrade pip
-          pip install pandas FinMind requests tqdm
+          pip install yfinance pandas requests FinMind
 
-      - name: Run script
-        run: python myscreen.py
+      - name: 執行掃描程式
+        run: python myscreen.py  # ⚠️ 請確保這檔名跟你的 Python 檔名一模一樣
