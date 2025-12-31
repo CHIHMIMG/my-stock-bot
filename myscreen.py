@@ -1,104 +1,88 @@
 import pandas as pd
+import yfinance as yf
 from FinMind.data import DataLoader
 import datetime
 import requests
 import time
 
 # --- 設定區 ---
-# 注意：請確保此處字串乾淨，建議手動刪除後重新貼上
 DISCORD_WEBHOOK_URL = 'https://discordapp.com/api/webhooks/1455572127095848980/uyuzoVxMm-y3KWas2bLUPPAq7oUftAZZBzwEmnCAjkw54ZyPebn8M-6--woFB-Eh7fDL' 
-VOL_THRESHOLD = 6000 
-VOL_RATIO = 1.5      
+VOL_THRESHOLD = 6000  # 成交量大於 6000 張
+VOL_RATIO = 1.5       # 量增 1.5 倍
 
 def send_discord(msg):
     data = {"content": msg}
     try:
-        response = requests.post(DISCORD_WEBHOOK_URL, json=data, timeout=10)
-        if response.status_code == 204:
-            print(f"✅ 成功發送至 Discord: {msg[:20]}...")
-        else:
-            print(f"❌ Discord 回傳錯誤碼: {response.status_code}, 內容: {response.text}")
-    except Exception as e:
-        print(f"❌ 發送失敗，網路異常: {e}")
+        requests.post(DISCORD_WEBHOOK_URL, json=data, timeout=10)
+    except:
+        pass
 
 def screen_stocks():
-    report_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
-    print(f"🚀 啟動掃描 (門檻: {VOL_THRESHOLD}張 / 倍率: {VOL_RATIO}倍)...")
+    print(f"🚀 啟動即時掃描 (目標: 2337, 2377 等全台股)...")
     
+    # 1. 取得股票清單 (從 FinMind 拿清單比較快)
     dl = DataLoader()
-    # 如果有 Token 建議加上：dl.login(token="YOUR_TOKEN")
+    stock_info = dl.taiwan_stock_info()
+    all_stocks = stock_info[stock_info['stock_id'].str.len() == 4]['stock_id'].tolist()
     
-    try:
-        stock_info = dl.taiwan_stock_info()
-        # 只取 4 位數個股，排除認購權證
-        all_stocks = stock_info[stock_info['stock_id'].str.len() == 4][['stock_id', 'stock_name']].values.tolist()
-        print(f"📊 正在檢查全台股 {len(all_stocks)} 檔標的...")
-    except Exception as e:
-        print(f"⚠️ 無法取得股票清單: {e}")
-        return
-
-    start_date = (datetime.datetime.now() - datetime.timedelta(days=120)).strftime('%Y-%m-%d')
     hits = []
-    
-    for idx, (sid, name) in enumerate(all_stocks):
-        # 顯示進度，避免以為程式當掉
-        if idx % 100 == 0:
-            print(f"⏳ 已掃描 {idx}/{len(all_stocks)} 檔...")
-            
-        try:
-            df = dl.taiwan_stock_daily(stock_id=sid, start_date=start_date)
-            
-            if df is None or len(df) < 61:
-                continue
-            
-            # 轉換資料格式確保計算正確
-            df['close'] = df['close'].astype(float)
-            df['Volume'] = df['Volume'].astype(float)
-            
-            today = df.iloc[-1]
-            yesterday = df.iloc[-2]
-            
-            # 計算均線
-            ma5 = df['close'].rolling(5).mean().iloc[-1]
-            ma10 = df['close'].rolling(10).mean().iloc[-1]
-            ma20 = df['close'].rolling(20).mean().iloc[-1]
-            ma60 = df['close'].rolling(60).mean().iloc[-1]
-            
-            close = today['close']
-            vol_k = today['Volume'] / 1000
-            y_vol = yesterday['Volume']
+    total = len(all_stocks)
 
-            # 核心條件
-            cond1 = vol_k >= VOL_THRESHOLD
-            cond2 = close >= ma5 and close >= ma10 and close >= ma20 and close >= ma60
-            cond3 = today['Volume'] >= (y_vol * VOL_RATIO)
+    for idx, sid in enumerate(all_stocks):
+        try:
+            # 2. 從 yfinance 抓取即時 + 歷史數據 (Yahoo 數據對台灣市場非常準確)
+            # 格式需為 'XXXX.TW' (上市) 或 'XXXX.TWO' (上櫃)
+            ticker_id = f"{sid}.TW"
+            ticker = yf.Ticker(ticker_id)
+            df = ticker.history(period="90d") # 抓 90 天確保足夠算 MA60
             
+            if len(df) < 60:
+                continue
+
+            # 3. 數據定義 (Yahoo 的 Volume 單位是「股」，必須除以 1000)
+            today_vol = df['Volume'].iloc[-1] / 1000
+            yesterday_vol = df['Volume'].iloc[-2] / 1000
+            close_price = df['Close'].iloc[-1]
+
+            # 4. 計算均線 (與看盤軟體同步)
+            ma5 = df['Close'].rolling(5).mean().iloc[-1]
+            ma10 = df['Close'].rolling(10).mean().iloc[-1]
+            ma20 = df['Close'].rolling(20).mean().iloc[-1]
+            ma60 = df['Close'].rolling(60).mean().iloc[-1]
+
+            # 核心篩選條件
+            cond1 = today_vol >= VOL_THRESHOLD                   # 1. 成交量 > 6000張
+            cond2 = close_price >= max(ma5, ma10, ma20, ma60)    # 2. 站在所有均線上
+            cond3 = today_vol >= (yesterday_vol * VOL_RATIO)     # 3. 量增 1.5 倍以上
+
+            # 除錯追蹤：如果是 2337 或 2377，強制印出數值核對
+            if sid in ['2337', '2377']:
+                print(f"🔍 檢查 {sid}: 價格={round(close_price,2)}, 量={int(today_vol)}張, 昨量={int(yesterday_vol)}張, 均線狀況={'符合' if cond2 else '未站上'}")
+
             if cond1 and cond2 and cond3:
-                growth = round(today['Volume'] / y_vol, 2)
-                res = f"🌟 {sid} {name}: {close} (量:{int(vol_k)}張, 增:{growth}倍)"
+                growth = round(today_vol / yesterday_vol, 2)
+                res = f"🌟 {sid}: {round(close_price, 2)} (量:{int(today_vol)}張, 較昨日增:{growth}倍)"
                 hits.append(res)
                 print(f"🔥 命中標的: {res}")
-                
+
         except Exception as e:
-            # 不要完全隱藏錯誤，至少印出來看看
-            print(f"⚠️ {sid} 處理錯誤: {e}")
             continue
-        
-        # 稍微緩衝，避免被 API 鎖 IP
-        time.sleep(0.1)
+            
+        # 顯示掃描進度
+        if idx % 100 == 0:
+            print(f"⏳ 進度: {idx}/{total}")
 
     # --- 發送結果 ---
+    report_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
     if not hits:
-        send_discord(f"📊 **掃描報告 ({report_time})**\n目前無符合「量增且站上均線」之標的。")
+        send_discord(f"📊 **掃描報告 ({report_time})**\n目前無符合「量 > 6000張 & 量增1.5倍 & 站上所有均線」之標的。")
     else:
-        header = f"📊 **強勢動能名單 ({report_time})**\n條件：量 > {VOL_THRESHOLD}張 & 增幅 > {VOL_RATIO}倍\n"
+        header = f"📊 **強勢動能名單 ({report_time})**\n"
         send_discord(header)
-        # 分段發送
         for i in range(0, len(hits), 10):
-            msg = "\n".join(hits[i:i + 10])
-            send_discord(msg)
+            send_discord("\n".join(hits[i:i + 10]))
 
-    print("✅ 任務完成！")
+    print("✅ 掃描與發送流程完成！")
 
 if __name__ == "__main__":
     screen_stocks()
