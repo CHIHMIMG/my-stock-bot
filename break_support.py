@@ -4,7 +4,7 @@ import os
 import pandas as pd
 
 # --- 設定區 ---
-DISCORD_WEBHOOK_URL = ''
+DISCORD_WEBHOOK_URL = 'https://discordapp.com/api/webhooks/1455572127095848980/uyuzoVxMm-y3KWas2bLUPPAq7oUftAZZBzwEmnCAjkw54ZyPebn8M-6--woFB-Eh7fDL'
 
 def check_breakthrough():
     if not os.path.exists('targets.txt'):
