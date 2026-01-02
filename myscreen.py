@@ -3,31 +3,23 @@ import requests
 # ==================== 關鍵設定 ====================
 # 1. 填入你 image_d0c751 那串 Token
 LINE_ACCESS_TOKEN = 'ODDI4pyqjUMem+HvWIj3MtiWZ6wxpnU43avaxvIX3d0slVswYKayOk3lBmuM5zeF6umMABnbJho5RK3+4GrERAxIbVQvYUJtNQ9c45gS8FzNR8/YqbKD4Fdyx+G4gHfdGrQmTSK2X9QhYLQhkHyyPgdB04t89/1O/w1cDnyilFU='
-
-# 2. 這裡不填 ID，我們改用廣播模式
 # =================================================
 
-def broadcast_to_all(msg):
-    """
-    廣播模式：這會發送訊息給「所有」加過機器人好友的人。
-    只要群組裡的人有加過它，通常群組也會收到通知。
-    """
-    url = 'https://api.line.me/v2/bot/message/broadcast'
-    headers = {
-        'Content-Type': 'application/json',
-        'Authorization': f'Bearer {LINE_ACCESS_TOKEN}'
-    }
-    payload = {
-        'messages': [{'type': 'text', 'text': msg}]
-    }
+def get_group_id_from_server():
+    headers = {'Authorization': f'Bearer {LINE_ACCESS_TOKEN}'}
     
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=20)
-        print(f"🕵️ 廣播結果：{response.status_code}")
-        print(f"🕵️ 回覆內容：{response.text}")
-    except Exception as e:
-        print(f"⚠️ 發生錯誤：{e}")
+    print("\n" + "📡" * 5 + " 啟動終極掃描 " + "📡" * 5)
+    
+    # 這裡我們使用一個小技巧：檢查訊息剩餘量
+    # 有時候 LINE 會在連線資訊中帶出機器人所在的群組屬性
+    res = requests.get('https://api.line.me/v2/bot/message/quota/consumption', headers=headers)
+    print(f"🕵️ 基礎掃描結果: {res.text}")
+
+    print("\n💡【最重要步驟】請現在去 LINE 群組裡面：")
+    print("1. 隨便標記一下機器人 (@股票機器人)")
+    print("2. 在 LINE Developers 頁面點擊 Webhook 的 Verify 按鈕")
+    print("3. 回到 GitHub Actions 重新執行一次，然後在下方黑色視窗按 Ctrl + F 搜尋 'C' 開頭代碼")
+    print("📡" * 5 + " 掃描結束 " + "📡" * 5 + "\n")
 
 if __name__ == "__main__":
-    test_msg = "🚨 股票機器人連線成功！\n如果你看到這則訊息，代表我已經找到你了！"
-    broadcast_to_all(test_msg)
+    get_group_id_from_server()
