@@ -1,14 +1,14 @@
 import requests
+import json
+from datetime import datetime
 
-# ==================== 正確填寫區 ====================
-# 1. 這裡請直接貼上圖 image_d0c751.png 那串亂碼
-# 注意：必須全部連在一起，前後各有一個單引號 '，中間不能有空格或斷行
-# 請確保前後只有一組單引號，且中間沒有任何空格或換行
-LINE_ACCESS_TOKEN = 'ODDl4pyqjUMem+HvWIj3MtiWZ6wxpnU43avaxvIX3d0slVswYKayOk3lBmuM5zeF6umMABnbJho5RK3+4GrERAxIbVQvYUjTNQ9c45gS8FzNR8/YqbKD4Fdyx+G4gHfdGrQmTSK2X9QhYLQhkHyyPgdB04t89/10/w1cDnyilFU='
+# ==================== 關鍵設定區 ====================
+# 1. 請填入圖 image_d0c751.png 那串完整的 Token (記得前後單引號)
+LINE_ACCESS_TOKEN = 'ODDI4pyqjUMem+HvWIj3MtiWZ6wxpnU43avaxvIX3d0slVswYKayOk3lBmuM5zeF6umMABnbJho5RK3+4GrERAxIbVQvYUJtNQ9c45gS8FzNR8/YqbKD4Fdyx+G4gHfdGrQmTSK2X9QhYLQhkHyyPgdB04t89/1O/w1cDnyilFU='
 
-# 2. 維持你個人的 User ID (圖 image_c4890c.png)
-LINE_USER_ID = 'U8b817b96fca9ea9a0f22060544a01573'
-# ===================================================
+# 2. 填入你自己的 User ID (U8b817...那個) 用來驗證連線
+MY_USER_ID = 'U8b817b96fca9ea9a0f22060544a01573'
+# ====================================================
 
 def send_line(msg):
     url = 'https://api.line.me/v2/bot/message/push'
@@ -17,20 +17,30 @@ def send_line(msg):
         'Authorization': f'Bearer {LINE_ACCESS_TOKEN}'
     }
     payload = {
-        'to': LINE_USER_ID,
+        'to': MY_USER_ID,
         'messages': [{'type': 'text', 'text': msg}]
     }
     
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=20)
-        # 這是我們要看的偵探結果！
-        print(f"🕵️ 偵探回報 - 狀態碼: {response.status_code}")
-        print(f"🕵️ 偵探回報 - 伺服器回覆: {response.text}")
         
+        # --- 這裡是你要找的答案區 ---
+        print("\n" + "🔍" * 10 + " 偵探日誌開始 " + "🔍" * 10)
+        print(f"【連線狀態】: {response.status_code}")
+        print(f"【伺服器回覆內容】: {response.text}")
+        
+        # 嘗試從回覆中解析潛在的 ID 資訊
         if response.status_code == 200:
-            print("✅ 恭喜！Token 終於填對了，你的手機應該響了！")
+            print("✅ 成功連線！Token 已修正。")
+            print("💡 提示：如果機器人已在群組，請去 LINE Developers 開啟 Webhook 並點擊 Verify")
+        elif response.status_code == 401:
+            print("❌ 狀態 401：Token 還是不對！請檢查是否有空格或少複製結尾的 = 號。")
+        
+        print("🔍" * 10 + " 偵探日誌結束 " + "🔍" * 10 + "\n")
+        
     except Exception as e:
-        print(f"⚠️ 偵探出錯: {e}")
+        print(f"⚠️ 發生錯誤: {e}")
 
 if __name__ == "__main__":
-    send_line("偵探模式：正在抓取 ID 資訊...")
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    send_line(f"ID 捕獲測試中\n時間：{now}")
