@@ -1,12 +1,11 @@
 import requests
-from datetime import datetime
 
 # ==================== 修正後的設定區 ====================
-# 注意：Token 必須放在同一行，且前後都要有單引號 ' 
-LINE_ACCESS_TOKEN = 'ODDl4pyqjUMem+HvWIj3MtiWZ6wxpnU43avaxvIX3d0slVswYKayOk3lBmuM5zeF6umMABnbJho5RK3+4GrERAxIbVQvYUjTNQ9c45gS8FzNR8/YqbKD4Fdyx+G4gHfdGrQmTSK2X9QhYLQhkHyyPgdB04t89/10/w1cDnyilFU='
+# 1. 再次確認 Token 是否完整 (一定要 issue 新的試試看)
+LINE_ACCESS_TOKEN = 'ODDI4pyqjUMem+HvWIj3MtiWZ6wxpnU43avaxvIX3d0slVswYKayOk3lBmuM5zeF6umMABnbJho5RK3+4GrERAxIbVQvYUJtNQ9c45gS8FzNR8/YqbKD4Fdyx+G4gHfdGrQmTSK2X9QhYLQhkHyyPgdB04t89/1O/w1cDnyilFU='
 
-# 填入你自己的 User ID (來自圖 image_c4890c.png)
-LINE_USER_ID = 'U8b817b96fca9ea9a0f22060544a01573'
+# 2. 維持你個人的 User ID，用來驗證 Token 是否修好
+MY_USER_ID = 'U8b817b96fca9ea9a0f22060544a01573'
 # ======================================================
 
 def send_line(msg):
@@ -16,18 +15,22 @@ def send_line(msg):
         'Authorization': f'Bearer {LINE_ACCESS_TOKEN}'
     }
     payload = {
-        'to': LINE_USER_ID,
+        'to': MY_USER_ID,
         'messages': [{'type': 'text', 'text': msg}]
     }
     
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=20)
-        # 這兩行是關鍵！會在 GitHub Actions 的 Log 裡印出資訊
+        # --- 抓 ID 的關鍵日誌 ---
         print(f"🕵️ 偵探回報 - 狀態碼: {response.status_code}")
         print(f"🕵️ 偵探回報 - 詳細內容: {response.text}")
+        
+        if response.status_code == 200:
+            print("✅ Token 修好了！你可以收到私訊了。")
+        elif response.status_code == 401:
+            print("❌ Token 還是錯的，請確認是否複製到 Channel Secret 了？")
     except Exception as e:
-        print(f"⚠️ 偵探發生錯誤: {e}")
+        print(f"⚠️ 發生錯誤: {e}")
 
 if __name__ == "__main__":
-    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    send_line(f"偵探模式測試中\n執行時間：{now}")
+    send_line("偵探模式：正在驗證連線狀況...")
