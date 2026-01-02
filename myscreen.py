@@ -5,28 +5,36 @@ import requests
 import datetime
 
 # --- 設定區 ---
-# 請填入你的 LINE 或 Discord 資訊
+# 1. 請填入圖 image_d0c751 那串正確的 Token
 LINE_ACCESS_TOKEN = 'ODDI4pyqjUMem+HvWIj3MtiWZ6wxpnU43avaxvIX3d0slVswYKayOk3lBmuM5zeF6umMABnbJho5RK3+4GrERAxIbVQvYUJtNQ9c45gS8FzNR8/YqbKD4Fdyx+G4gHfdGrQmTSK2X9QhYLQhkHyyPgdB04t89/1O/w1cDnyilFU='
-LINE_USER_ID = 'U8b817b96fca9ea9a0f22060544a01573'
+
+# 2. 【多人群發】在此加入所有好友的 ID (U開頭)
+LINE_USER_IDS = [
+    'U8b817b96fca9ea9a0f22060544a01573', # 你自己
+    'U4de56b5601784f6078e23a713782e595', # 這裡填入第一個朋友的 ID
+    '朋友的UID_2'  # 這裡填入第二個朋友的 ID
+]
 
 VOL_THRESHOLD = 6000  # 成交量門檻
-VOL_RATIO = 1.5       # 【修改】量增 1.5 倍以上
-PRICE_LIMIT = 100     # 【新增】股價上限 100 元
+VOL_RATIO = 1.5       # 量增 1.5 倍以上
+PRICE_LIMIT = 100     # 股價上限 100 元
 
 def send_line(msg):
-    url = 'https://api.line.me/v2/bot/message/push'
+    """將發送方式改為 multicast 支援多人接收"""
+    url = 'https://api.line.me/v2/bot/message/multicast'
     headers = {
         'Content-Type': 'application/json',
         'Authorization': f'Bearer {LINE_ACCESS_TOKEN}'
     }
     payload = {
-        'to': LINE_USER_ID,
+        'to': LINE_USER_IDS,
         'messages': [{'type': 'text', 'text': msg}]
     }
     try:
-        requests.post(url, headers=headers, json=payload, timeout=20)
-    except:
-        pass
+        response = requests.post(url, headers=headers, json=payload, timeout=20)
+        print(f"✅ 群發結果狀態碼: {response.status_code}")
+    except Exception as e:
+        print(f"⚠️ 發送失敗: {e}")
 
 def screen_stocks():
     report_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
@@ -66,10 +74,6 @@ def screen_stocks():
             ma60 = df['Close'].rolling(60).mean().iloc[-1]
 
             # --- 判斷邏輯 ---
-            # 1. 成交量 > 6000
-            # 2. 今日量 > 昨日量 * 1.5
-            # 3. 股價 <= 100 元 (【新增條件】)
-            # 4. 股價站在所有均線上
             if (today_vol >= VOL_THRESHOLD and 
                 today_vol >= (yesterday_vol * VOL_RATIO) and 
                 close_price <= PRICE_LIMIT and 
