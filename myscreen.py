@@ -1,22 +1,33 @@
-def send_line(msg):
-    import requests
-    url = 'https://api.line.me/v2/bot/message/push'
+import requests
+import json
+
+# ==================== 關鍵設定區 ====================
+LINE_ACCESS_TOKEN = 'ODDI4pyqjUMem+HvWIj3MtiWZ6wxpnU43avaxvIX3d0slVswYKayOk3lBmuM5zeF6umMABnbJho5RK3+4GrERAxIbVQvYUJtNQ9c45gS8FzNR8/YqbKD4Fdyx+G4gHfdGrQmTSK2X9QhYLQhkHyyPgdB04t89/1O/w1cDnyilFU=' # 圖 image_d0c751 那串
+MY_USER_ID = 'U8b817b96fca9ea9a0f22060544a01573'
+# ====================================================
+
+def capture_id():
     headers = {
-        'Content-Type': 'application/json',
-        'Authorization': f'Bearer {LINE_ACCESS_TOKEN}'
-    }
-    # 這裡可以嘗試填入你猜測的 ID，但我們先維持發給你自己
-    payload = {
-        'to': 'U8b817b96fca9ea9a0f22060544a01573', 
-        'messages': [{'type': 'text', 'text': msg}]
+        'Authorization': f'Bearer {LINE_ACCESS_TOKEN}',
+        'Content-Type': 'application/json'
     }
     
-    # 執行一次發送來確認連線
-    response = requests.post(url, headers=headers, json=payload)
-    print(f"🕵️ 目前連線正常: {response.status_code}")
+    print("\n" + "🔍" * 5 + " 開始全面搜捕 ID " + "🔍" * 5)
+    
+    # 方法 A：發送測試訊息並印出完整 Response
+    push_url = 'https://api.line.me/v2/bot/message/push'
+    payload = {'to': MY_USER_ID, 'messages': [{'type': 'text', 'text': '正在抓取 ID...'}]}
+    res = requests.post(push_url, headers=headers, json=payload)
+    print(f"【推播測試回覆】: {res.text}")
 
-    # --- 關鍵：嘗試抓取伺服器的互動資訊 ---
-    # 因為你沒有架伺服器，我們試著去抓 LINE 的 Quota 資訊，有時會帶出所在群組數
-    quota_url = 'https://api.line.me/v2/bot/message/quota/consumption'
-    q_res = requests.get(quota_url, headers=headers)
-    print(f"📊 本月訊息消耗量: {q_res.text}")
+    # 方法 B：檢查機器人所在的群組總數 (這有時會帶出隱藏資訊)
+    # 這裡我們利用一個小技巧，故意發給一個不存在的 C ID，看錯誤訊息是否會提示正確格式
+    test_group_url = 'https://api.line.me/v2/bot/message/push'
+    wrong_payload = {'to': 'C00000000000000000000000000000000', 'messages': [{'type': 'text', 'text': 'ID?'}]}
+    res_err = requests.post(test_group_url, headers=headers, json=wrong_payload)
+    print(f"【群組連線偵測】: {res_err.text}")
+
+    print("🔍" * 5 + " 搜捕結束，請查看上方內容 " + "🔍" * 5 + "\n")
+
+if __name__ == "__main__":
+    capture_id()
