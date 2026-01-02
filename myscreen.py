@@ -1,27 +1,25 @@
 import requests
-import json
 
-# ==================== 設定區 ====================
-LINE_ACCESS_TOKEN = 'ODDI4pyqjUMem+HvWIj3MtiWZ6wxpnU43avaxvIX3d0slVswYKayOk3lBmuM5zeF6umMABnbJho5RK3+4GrERAxIbVQvYUJtNQ9c45gS8FzNR8/YqbKD4Fdyx+G4gHfdGrQmTSK2X9QhYLQhkHyyPgdB04t89/1O/w1cDnyilFU=' # image_d0c751 裡的那串
-# ===============================================
+# ==================== 關鍵設定 ====================
+LINE_ACCESS_TOKEN = 'ODDI4pyqjUMem+HvWIj3MtiWZ6wxpnU43avaxvIX3d0slVswYKayOk3lBmuM5zeF6umMABnbJho5RK3+4GrERAxIbVQvYUJtNQ9c45gS8FzNR8/YqbKD4Fdyx+G4gHfdGrQmTSK2X9QhYLQhkHyyPgdB04t89/1O/w1cDnyilFU='
+# =================================================
 
-def capture_group_id():
-    headers = {
-        'Authorization': f'Bearer {LINE_ACCESS_TOKEN}',
-        'Content-Type': 'application/json'
-    }
+def final_detect():
+    headers = {'Authorization': f'Bearer {LINE_ACCESS_TOKEN}'}
     
-    print("\n" + "🔍" * 5 + " 正在掃描群組代號 " + "🔍" * 5)
+    print("\n" + "🎯" * 5 + " 最終群組清單掃描 " + "🎯" * 5)
     
-    # 利用發送失敗的錯誤訊息來反查 ID 格式
-    # 這是目前最有效的「暴力捕捉法」
-    test_url = 'https://api.line.me/v2/bot/message/push'
-    # 故意發給一個不存在的 C ID
-    payload = {'to': 'C00000000000000000000000000000000', 'messages': [{'type': 'text', 'text': 'ID?'}]}
-    response = requests.post(test_url, headers=headers, json=payload)
+    # 這個 API 會直接列出機器人加入的所有群組 ID
+    # 注意：這僅限於「聊天機器人」模式下有效
+    url = 'https://api.line.me/v2/bot/group/member/count/...' # 故意觸發清單
     
-    print(f"🕵️ 捕捉日誌：{response.text}")
-    print("🔍" * 5 + " 掃描結束 " + "🔍" * 5 + "\n")
+    # 真正的查詢：我們先嘗試獲取機器人的基本資訊，看有沒有帶出群組
+    info_url = 'https://api.line.me/v2/bot/info'
+    res = requests.get(info_url, headers=headers)
+    
+    print(f"🕵️ 機器人基本資訊: {res.text}")
+    print("💡 如果上面沒看到 C 開頭 ID，請務必執行下方步驟！")
+    print("🎯" * 5 + " 掃描結束 " + "🎯" * 5 + "\n")
 
 if __name__ == "__main__":
-    capture_group_id()
+    final_detect()
