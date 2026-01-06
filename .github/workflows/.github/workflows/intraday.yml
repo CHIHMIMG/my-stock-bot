@@ -2,16 +2,18 @@ name: Intraday_Monitor
 
 on:
   schedule:
-    - cron: '*/5 1,2,3,4,5 * * 1-5' # 台北時間 09:00-13:30 每 5 分鐘
-  workflow_dispatch:               
+    - cron: '*/5 1,2,3,4,5 * * 1-5' # 台北時間週一至週五 09:00-13:30 (UTC 01:00-05:30)
+  workflow_dispatch:               # 開啟手動執行按鈕
 
 jobs:
-  run:
+  run_monitor:
     runs-on: ubuntu-latest
     permissions:
-      contents: write    
+      contents: write              # 允許工作流修改並寫回 targets.txt
+    
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -19,17 +21,18 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: pip install yfinance pandas requests
+        run: |
+          pip install yfinance pandas requests
 
-      - name: Run Intraday Check
+      - name: Run Break Support Check
         run: python break_support.py
         env:
           TZ: "Asia/Taipei"
 
       - name: Update targets.txt status
         run: |
-          git config --global user.name "GitHub Actions Bot"
-          git config --global user.email "actions@github.com"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add targets.txt
-          git commit -m "Remove triggered stocks" || echo "No changes"
+          git commit -m "Auto-remove triggered stocks [skip ci]" || echo "No changes to commit"
           git push
