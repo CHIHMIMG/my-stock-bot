@@ -52,14 +52,10 @@ def check_breakthrough():
                 market_type = "OTC"
             
             if df.empty:
-                print(f"⚠️ 無法取得 {clean_sid} 資料")
                 still_watching.add(clean_sid)
                 continue
 
-            # 3. 💡 新增：抓取股票名稱 (Ticker Info)
-            ticker = yf.Ticker(f"{clean_sid}.TW" if market_type == "TWSE" else f"{clean_sid}.TWO")
-            s_name = ticker.info.get('shortName', clean_sid)
-
+            # 3. 抓取最新股價與前日量
             current_price = float(df['Close'].iloc[-1])
             last_vol = int(df['Volume'].iloc[-1] / 1000)
 
@@ -74,19 +70,21 @@ def check_breakthrough():
             
             # 5. 判斷是否跌破支撐
             if support_price and current_price < support_price:
-                # 💡 修正：使用正確的市場分類，確保 TradingView 不會是一片空白
+                # 連結依然保持，方便你直接點開看圖確認名稱
                 tv_url = f"https://tw.tradingview.com/chart/?symbol={market_type}:{clean_sid}"
                 
-                msg = (f"🚨 跌破警報：{clean_sid} {s_name}\n"
+                # 💡 這裡移除了英文名稱，只顯示代號
+                msg = (f"🚨 跌破警報：{clean_sid}\n"
                        f"💰 現價 {current_price:.2f} 跌破支撐 {support_price:.1f}\n"
-                       f"📊 數據日期：{df.index[-1].strftime('%m/%d')}\n"
+                       f"📊 今日量：{last_vol}張\n"
                        f"🔗 線圖：{tv_url}")
                 
                 send_alert(msg)
-                print(f"🚨 {clean_sid} {s_name} 已發送警報並移出清單")
+                print(f"🚨 {clean_sid} 已發送警報並移出清單")
             else:
                 still_watching.add(clean_sid)
-                print(f"✅ {clean_sid} {s_name} 守住支撐 ({current_price:.2f} > {support_price if support_price else 'N/A'})")
+                # 日誌維持輸出，方便檢查，但 LINE 不會收到英文
+                print(f"✅ {clean_sid} 守住支撐 ({current_price:.2f} > {support_price if support_price else 'N/A'})")
                 
         except Exception as e:
             print(f"❌ 處理 {sid} 時發生錯誤: {e}")
