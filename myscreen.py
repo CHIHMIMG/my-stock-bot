@@ -1,17 +1,17 @@
-import pandas as pd
-from FinMind.data import DataLoader
+import yfinance as yf
 import requests
-import datetime
 import os
-import time
+from datetime import datetime, timedelta
 
 # --- 設定區 ---
 LINE_ACCESS_TOKEN = 'ODDI4pyqjUMem+HvWIj3MtiWZ6wxpnU43avaxvIX3d0slVswYKayOk3lBmuM5zeF6umMABnbJho5RK3+4GrERAxIbVQvYUJtNQ9c45gS8FzNR8/YqbKD4Fdyx+G4gHfdGrQmTSK2X9QhYLQhkHyyPgdB04t89/1O/w1cDnyilFU='
 LINE_USER_ID = 'U8b817b96fca9ea9a0f22060544a01573'
 DISCORD_WEBHOOK_URL = 'https://discordapp.com/api/webhooks/1455572127095848980/uyuzoVxMm-y3KWas2bLUPPAq7oUftAZZBzwEmnCAjkw54ZyPebn8M-6--woFB-Eh7fDL'
 
+# 預設一些熱門觀察股代碼 (你可以手動增加更多)
+MONITOR_LIST = ['2330','2303','6116','2369','3060','3576','4919','2419','2630','2340','2349','6126','6016','3027','6026','6005','6244','6190','8074','8105','8422']
+
 def send_alert(msg):
-    """發送警報至 Discord 與 LINE"""
     try:
         requests.post(DISCORD_WEBHOOK_URL, json={"content": msg}, timeout=15)
     except: pass
@@ -22,85 +22,58 @@ def send_alert(msg):
         requests.post(url, headers=headers, json=payload, timeout=15)
     except: pass
 
+def get_stock_name(symbol):
+    # 這裡可以透過簡單的字典對應，或直接回傳代號
+    return f"台股 {symbol}"
+
 def main():
-    print("🚀 啟動盤後精準選股 (自動尋找最近交易日)...")
-    dl = DataLoader()
+    print(f"🚀 啟動 yfinance 版精準選股: {datetime.now().strftime('%Y-%m-%d')}")
     
-    # 自動尋找最近有數據的日期 (往回找 5 天)
-    df_today = pd.DataFrame()
-    target_date = datetime.datetime.now()
-    
-    for _ in range(5):
-        date_str = target_date.strftime('%Y-%m-%d')
-        try:
-            # 使用最新的 daily_info 介面
-            df_today = dl.taiwan_stock_daily_info(date=date_str)
-            if not df_today.empty:
-                print(f"✅ 成功取得 {date_str} 數據")
-                break
-        except:
-            pass
-        target_date -= datetime.timedelta(days=1)
-        print(f"🔎 {date_str} 無數據，嘗試前一天...")
-
-    if df_today.empty:
-        print("❌ 搜尋範圍內皆無數據。")
-        return
-
-    # 條件過濾：股價 < 100 且 成交張數 >= 6000
-    df_today['成交張數'] = df_today['成交量'] / 1000
-    mask = (df_today['收盤價'] < 100) & (df_today['成交張數'] >= 6000)
-    potential_list = df_today[mask].copy()
-
     final_selection = []
-    # 抓取歷史數據用於比對爆量 (回溯 15 天)
-    history_start = (target_date - datetime.timedelta(days=15)).strftime('%Y-%m-%d')
     
-    for index, row in potential_list.iterrows():
-        sid = row['證券代碼']
-        sname = row['證券名稱']
-        
+    # 這裡我們直接遍歷你的 targets 名單，或者你可以放一個更廣的名單
+    # 如果你要全市場掃描，yfinance 速度會慢，建議先放你關注的 50-100 檔
+    for sid in MONITOR_LIST:
         try:
-            # 精準獲取個股歷史
-            stock_history = dl.taiwan_stock_daily(stock_id=sid, start_date=history_start)
+            ticker = yf.Ticker(f"{sid}.TW")
+            df = ticker.history(period="5d")
+            if df.empty:
+                ticker = yf.Ticker(f"{sid}.TWO")
+                df = ticker.history(period="5d")
             
-            if len(stock_history) >= 2:
-                # 最後一筆為當日，倒數第二筆為昨日
-                vol_today = stock_history['Volume'].iloc[-1]
-                vol_yesterday = stock_history['Volume'].iloc[-2]
-                current_close = stock_history['close'].iloc[-1]
-                
-                # 今日量 > 昨日量 1.5 倍
-                if vol_today >= (vol_yesterday * 1.5):
-                    # 計算漲跌幅
-                    prev_close = stock_history['close'].iloc[-2]
-                    diff_pct = round(((current_close - prev_close) / prev_close) * 100, 2)
-                    
-                    final_selection.append({
-                        'id': sid,
-                        'name': sname,
-                        'close': current_close,
-                        'vol': int(vol_today / 1000),
-                        'diff': diff_pct
-                    })
-            time.sleep(0.05) # 輕微停頓
+            if len(df) < 2: continue
+            
+            # 數據提取
+            today = df.iloc[-1]
+            yesterday = df.iloc[-2]
+            
+            price = today['Close']
+            vol_today = today['Volume'] / 1000 # 換算成張
+            vol_yesterday = yesterday['Volume'] / 1000
+            
+            # 條件判斷
+            if price < 100 and vol_today > 6000 and vol_today >= (vol_yesterday * 1.5):
+                change = ((price - yesterday['Close']) / yesterday['Close']) * 100
+                final_selection.append({
+                    'id': sid,
+                    'price': round(price, 2),
+                    'vol': int(vol_today),
+                    'diff': round(change, 2)
+                })
+                print(f"✅ 發現標的: {sid} (量增 {round(vol_today/vol_yesterday, 2)}倍)")
         except:
             continue
 
-    # 3. 發送摘要並更新 targets.txt
     if final_selection:
-        # 按成交量排序
-        final_selection = sorted(final_selection, key=lambda x: x['vol'], reverse=True)
         target_ids = [s['id'] for s in final_selection]
-        
         with open('targets.txt', 'w') as f:
             f.write('\n'.join(target_ids))
         
-        msg = f"📊 {target_date.strftime('%m/%d')} 盤後爆量精選\n"
+        msg = f"📊 {datetime.now().strftime('%m/%d')} 盤後爆量選股\n"
         msg += "------------------\n"
         for s in final_selection:
-            msg += f"🔹 {s['id']} {s['name']}\n"
-            msg += f"   收盤價: {s['close']}\n"
+            msg += f"🔹 {s['id']}\n"
+            msg += f"   收盤價: {s['price']}\n"
             msg += f"   漲跌幅: {s['diff']}%\n"
             msg += f"   成交量: {s['vol']}張\n"
         
