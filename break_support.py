@@ -42,10 +42,10 @@ def check_breakthrough():
     for sid in targets:
         try:
             clean_sid = sid.strip()
-            # 下載最新數據
+            # 下載最新數據 (取15天確保數據量足夠比對)
             df = yf.download(f"{clean_sid}.TW", period="15d", progress=False, auto_adjust=False, multi_level_index=False)
             market_type = "TWSE"
-            if df.empty or len(df) < 10:
+            if df.empty or len(df) < 5:
                 df = yf.download(f"{clean_sid}.TWO", period="15d", progress=False, auto_adjust=False, multi_level_index=False)
                 market_type = "OTC"
             
@@ -53,15 +53,15 @@ def check_breakthrough():
                 still_watching.add(clean_sid)
                 continue
 
-            # 目前價格
+            # 最新價格與今日成交量
             current_price = float(df['Close'].iloc[-1])
             today_vol = int(df['Volume'].iloc[-1] / 1000)
 
-            # --- 核心邏輯：從「昨天」開始往回找 3 天 (不含今天) ---
+            # --- 核心邏輯：從昨日開始往回找 3 天 (排除今天索引 -1) ---
             support_price = None
             found_date = ""
 
-            # i=2 是昨天, i=3 是前天, i=4 是大前天
+            # i=2(昨天), 3(前天), 4(大前天)
             for i in range(2, 5): 
                 vol_target = df['Volume'].iloc[-i]
                 vol_prev = df['Volume'].iloc[-i-1]
@@ -70,7 +70,7 @@ def check_breakthrough():
                 if vol_target >= (vol_prev * 1.5):
                     support_price = float(df['Low'].iloc[-i])
                     found_date = df.index[-i].strftime('%m/%d')
-                    break # 找到最近的一個爆量日就停止
+                    break 
             
             # 判斷是否跌破
             if support_price and current_price < support_price:
@@ -82,16 +82,19 @@ def check_breakthrough():
                        f"🔗 線圖：{tv_url}")
                 
                 send_alert(msg)
-                print(f"🚨 {clean_sid} 已發送警報：跌破 {found_date} 支撐 {support_price}")
+                print(f"🚨 {clean_sid} 觸發警報！已跌破 {found_date} 支撐位")
             else:
                 still_watching.add(clean_sid)
-                status = f"支撐({found_date}):{support_price}" if support_price else "三天內無爆量"
+                status = f"支撐({found_date}):{support_price}" if support_price else "無爆量支撐"
                 print(f"✅ {clean_sid} 正常 (現價:{current_price} | {status})")
                 
         except Exception as e:
             print(f"❌ 處理 {sid} 時發生錯誤: {e}")
             still_watching.add(sid)
         
-    # 寫回未觸發的股票
+    # 將剩餘監控名單寫回 targets.txt
     with open('targets.txt', 'w') as f:
-        f.write('\n'.join(sorted(list(still
+        f.write('\n'.join(sorted(list(still_watching))))
+
+if __name__ == "__main__":
+    check_breakthrough()
