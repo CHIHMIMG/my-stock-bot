@@ -1,100 +1,129 @@
-import yfinance as yf
-import requests
-import os
 import pandas as pd
-from datetime import datetime
+import yfinance as yf
 from FinMind.data import DataLoader
-import time
+import requests
+import datetime
 
 # --- 設定區 ---
 LINE_ACCESS_TOKEN = 'ODDI4pyqjUMem+HvWIj3MtiWZ6wxpnU43avaxvIX3d0slVswYKayOk3lBmuM5zeF6umMABnbJho5RK3+4GrERAxIbVQvYUJtNQ9c45gS8FzNR8/YqbKD4Fdyx+G4gHfdGrQmTSK2X9QhYLQhkHyyPgdB04t89/1O/w1cDnyilFU='
 LINE_USER_ID = 'U8b817b96fca9ea9a0f22060544a01573'
 DISCORD_WEBHOOK_URL = 'https://discordapp.com/api/webhooks/1455572127095848980/uyuzoVxMm-y3KWas2bLUPPAq7oUftAZZBzwEmnCAjkw54ZyPebn8M-6--woFB-Eh7fDL'
 
-def send_alert(msg):
+VOL_THRESHOLD = 6000  # 成交量門檻：6000張
+VOL_RATIO = 1.5       # 量增倍數：1.5倍
+PRICE_LIMIT = 100     # 股價門檻：100元以下
+
+def send_notifications(msg):
+    """發送通知到 Discord 與 LINE"""
     try:
-        requests.post(DISCORD_WEBHOOK_URL, json={"content": msg}, timeout=15)
-    except: pass
+        requests.post(DISCORD_WEBHOOK_URL, json={"content": msg}, timeout=20)
+    except:
+        pass
+    
     url = 'https://api.line.me/v2/bot/message/push'
     headers = {'Content-Type': 'application/json', 'Authorization': f'Bearer {LINE_ACCESS_TOKEN}'}
     payload = {'to': LINE_USER_ID, 'messages': [{'type': 'text', 'text': msg}]}
     try:
-        requests.post(url, headers=headers, json=payload, timeout=15)
-    except: pass
+        requests.post(url, headers=headers, json=payload, timeout=20)
+    except:
+        pass
 
-def main():
-    print(f"🚀 啟動【全市場】掃描 (排除金融股): {datetime.now().strftime('%Y-%m-%d')}")
+def screen_stocks():
+    report_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+    print(f"🚀 啟動掃描系統 | 條件: 近3日爆量(不含今日) | {report_time}")
+    
     dl = DataLoader()
+    stock_info = dl.taiwan_stock_info()
+    # 排除金融股並過濾 4 位數代號
+    filtered_info = stock_info[
+        (stock_info['stock_id'].str.len() == 4) & 
+        (~stock_info['industry_category'].str.contains('金融'))
+    ]
+    unique_list = filtered_info[['stock_id', 'stock_name']].drop_duplicates().values.tolist()
     
-    # 1. 取得全台灣所有股票清單及其產業類別
-    try:
-        stock_info = dl.taiwan_stock_info()
-        # 核心過濾：代號長度為4，且產業類別「不含」金融
-        filtered_info = stock_info[
-            (stock_info['stock_id'].str.len() == 4) & 
-            (~stock_info['industry_category'].str.contains('金融'))
-        ]
-        all_ids = filtered_info['stock_id'].tolist()
-        print(f"📊 排除金融股後，剩餘 {len(all_ids)} 檔標的進行掃描...")
-    except Exception as e:
-        print(f"⚠️ 無法取得清單: {e}")
-        return
-
-    final_selection = []
+    hits_msgs = []
+    hits_sids = set()
     
-    # 2. 開始大規模掃描
-    for i, sid in enumerate(all_ids):
-        if i % 100 == 0: print(f"進度: {i}/{len(all_ids)}")
-        
+    for sid, name in unique_list:
         try:
-            ticker_sid = f"{sid}.TW"
-            df = yf.download(ticker_sid, period="5d", progress=False, show_errors=False)
+            clean_sid = sid.strip()
             
-            if df.empty or len(df) < 2:
-                ticker_sid = f"{sid}.TWO"
-                df = yf.download(ticker_sid, period="5d", progress=False, show_errors=False)
+            # 下載足夠長的數據 (取 70 天確保 MA60 與回溯邏輯正常)
+            market_type = "TWSE"
+            df = yf.download(f"{clean_sid}.TW", period="70d", progress=False, auto_adjust=False, multi_level_index=False)
             
-            if df.empty or len(df) < 2: continue
+            if df.empty or len(df) < 25:
+                df = yf.download(f"{clean_sid}.TWO", period="70d", progress=False, auto_adjust=False, multi_level_index=False)
+                market_type = "OTC"
             
-            today = df.iloc[-1]
-            yesterday = df.iloc[-2]
-            
-            price = float(today['Close'])
-            vol_today = float(today['Volume']) / 1000 
-            vol_yesterday = float(yesterday['Volume']) / 1000
-            
-            # --- 篩選條件：10<股價<100, 今日量>6000, 今日量>昨日量1.5倍 ---
-            if 10 < price < 100 and vol_today >= 6000 and vol_today >= (vol_yesterday * 1.5):
-                change = ((price - float(yesterday['Close'])) / float(yesterday['Close'])) * 100
-                final_selection.append({
-                    'id': sid,
-                    'price': round(price, 2),
-                    'vol': int(vol_today),
-                    'diff': round(change, 2)
-                })
-                print(f"🎯 命中標的: {sid} (量增 {round(vol_today/vol_yesterday, 2)}倍)")
-        except:
-            continue
+            if df.empty or len(df) < 5: continue
 
-    # 3. 排序與發送
-    if final_selection:
-        final_selection = sorted(final_selection, key=lambda x: x['vol'], reverse=True)
-        target_ids = [s['id'] for s in final_selection]
-        with open('targets.txt', 'w') as f:
-            f.write('\n'.join(target_ids))
-        
-        msg = f"📊 {datetime.now().strftime('%m/%d')} 全市場爆量精選(已過濾金融股)\n"
-        msg += "------------------\n"
-        for s in final_selection:
-            msg += f"🔹 {s['id']}\n"
-            msg += f"   收盤價: {s['price']}\n"
-            msg += f"   漲跌幅: {s['diff']}%\n"
-            msg += f"   成交量: {s['vol']}張\n"
-        
-        send_alert(msg)
-        print(f"✅ 掃描完成，發現 {len(final_selection)} 檔。")
+            # --- 核心邏輯微調：不含假日的 3 個交易日 (不含當天) ---
+            # df.iloc[-1] 是今天
+            # df.iloc[-2] 是昨天 (第一個交易日)
+            # df.iloc[-3] 是前天 (第二個交易日)
+            # df.iloc[-4] 是大前天 (第三個交易日)
+            
+            past_3_days_data = df.iloc[-4:-1] # 取得昨天、前天、大前天這三列
+            
+            # 檢查這三天中是否有任何一天符合爆量條件
+            is_hit = False
+            hit_date_idx = -1
+            
+            for i in range(len(df)-4, len(df)-1):
+                current_vol = df['Volume'].iloc[i]
+                prev_vol = df['Volume'].iloc[i-1]
+                current_price = df['Close'].iloc[i]
+                
+                # 計算均線 (針對該交易日計算)
+                ma5 = df['Close'].rolling(5).mean().iloc[i]
+                ma20 = df['Close'].rolling(20).mean().iloc[i]
+                ma60 = df['Close'].rolling(60).mean().iloc[i]
+                
+                if (current_price <= PRICE_LIMIT and
+                    current_vol / 1000 >= VOL_THRESHOLD and
+                    current_vol >= (prev_vol * VOL_RATIO) and
+                    current_price >= max(ma5, ma20, ma60)):
+                    is_hit = True
+                    hit_date_idx = i
+                    break # 只要這三天有一點符合就選入
+            
+            if is_hit:
+                target_data = df.iloc[hit_date_idx]
+                prev_data = df.iloc[hit_date_idx-1]
+                
+                close_price = float(target_data['Close'])
+                p_percent = ((close_price - float(prev_data['Close'])) / float(prev_data['Close'])) * 100
+                today_vol = float(target_data['Volume']) / 1000
+                growth = round(target_data['Volume'] / prev_data['Volume'], 1)
+                hit_date = df.index[hit_date_idx].strftime('%m/%d')
+                
+                icon = "🔴" if p_percent > 0 else "🟢"
+                tv_url = f"https://tw.tradingview.com/chart/?symbol={market_type}:{clean_sid}"
+                
+                res = (f"{icon} {clean_sid} {name}\n"
+                       f"📅 爆量日: {hit_date}\n"
+                       f"💰 股價: {close_price:.2f} ({p_percent:+.2f}%)\n"
+                       f"📊 成交: {int(today_vol)}張 ({growth}x)\n"
+                       f"🔗 線圖: {tv_url}\n")
+                
+                hits_msgs.append(res)
+                hits_sids.add(clean_sid)
+
+        except Exception:
+            continue
+            
+    # 寫入監控名單
+    with open('targets.txt', 'w') as f:
+        f.write('\n'.join(sorted(list(hits_sids))))
+    
+    if hits_msgs:
+        header = f"🔥 【台股 3 日內爆量名單】\n(排除今日，不含假日)\n⏰ {report_time}\n" + "─" * 15 + "\n"
+        for i in range(0, len(hits_msgs), 5):
+            chunk = "\n".join(hits_msgs[i:i + 5])
+            send_notifications(header + chunk if i == 0 else chunk)
     else:
-        print("今日無符合條件標的。")
+        print("過去三個交易日無符合標的。")
 
 if __name__ == "__main__":
-    main()
+    screen_stocks()
