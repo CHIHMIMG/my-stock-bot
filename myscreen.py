@@ -23,67 +23,80 @@ def send_alert(msg):
     except: pass
 
 def main():
-    print("🚀 啟動盤後精準選股 (今日爆量 1.5倍, >6000張, 股價<100)...")
+    print("🚀 啟動盤後精準選股 (自動尋找最近交易日)...")
     dl = DataLoader()
     
-    # 修正：使用最新的數據獲取方式
-    today_str = datetime.datetime.now().strftime('%Y-%m-%d')
+    # 自動尋找最近有數據的日期 (往回找 5 天)
+    df_today = pd.DataFrame()
+    target_date = datetime.datetime.now()
     
-    # 抓取全市場快報 (使用今日日期)
-    try:
-        df_today = dl.taiwan_stock_daily_info(date=today_str)
-    except:
-        print(f"❌ 無法取得 {today_str} 數據，嘗試前一交易日...")
-        return
+    for _ in range(5):
+        date_str = target_date.strftime('%Y-%m-%d')
+        try:
+            # 使用最新的 daily_info 介面
+            df_today = dl.taiwan_stock_daily_info(date=date_str)
+            if not df_today.empty:
+                print(f"✅ 成功取得 {date_str} 數據")
+                break
+        except:
+            pass
+        target_date -= datetime.timedelta(days=1)
+        print(f"🔎 {date_str} 無數據，嘗試前一天...")
 
     if df_today.empty:
-        print("❌ 今日數據為空。")
+        print("❌ 搜尋範圍內皆無數據。")
         return
 
-    # 初步過濾：股價 < 100 且 成交張數 >= 6000 (FinMind 單位通常是股)
-    # 欄位名稱依版本可能不同，這裡做相容性處理
+    # 條件過濾：股價 < 100 且 成交張數 >= 6000
     df_today['成交張數'] = df_today['成交量'] / 1000
     mask = (df_today['收盤價'] < 100) & (df_today['成交張數'] >= 6000)
     potential_list = df_today[mask].copy()
 
     final_selection = []
-    # 抓取過去 10 天，確保能找到上一個交易日比對
-    start_str = (datetime.datetime.now() - datetime.timedelta(days=10)).strftime('%Y-%m-%d')
+    # 抓取歷史數據用於比對爆量 (回溯 15 天)
+    history_start = (target_date - datetime.timedelta(days=15)).strftime('%Y-%m-%d')
     
     for index, row in potential_list.iterrows():
         sid = row['證券代碼']
         sname = row['證券名稱']
         
         try:
-            # 獲取個股精準歷史數據
-            stock_history = dl.taiwan_stock_daily(stock_id=sid, start_date=start_str)
+            # 精準獲取個股歷史
+            stock_history = dl.taiwan_stock_daily(stock_id=sid, start_date=history_start)
             
             if len(stock_history) >= 2:
-                # 倒數第1筆是今天，倒數第2筆是上一個交易日
+                # 最後一筆為當日，倒數第二筆為昨日
                 vol_today = stock_history['Volume'].iloc[-1]
                 vol_yesterday = stock_history['Volume'].iloc[-2]
                 current_close = stock_history['close'].iloc[-1]
                 
-                # 💡 今日量 > 昨日量 1.5 倍
+                # 今日量 > 昨日量 1.5 倍
                 if vol_today >= (vol_yesterday * 1.5):
+                    # 計算漲跌幅
+                    prev_close = stock_history['close'].iloc[-2]
+                    diff_pct = round(((current_close - prev_close) / prev_close) * 100, 2)
+                    
                     final_selection.append({
                         'id': sid,
                         'name': sname,
                         'close': current_close,
                         'vol': int(vol_today / 1000),
-                        'diff': round(((current_close - stock_history['close'].iloc[-2]) / stock_history['close'].iloc[-2]) * 100, 2)
+                        'diff': diff_pct
                     })
-            time.sleep(0.1) # 避開頻率限制
+            time.sleep(0.05) # 輕微停頓
         except:
             continue
 
     # 3. 發送摘要並更新 targets.txt
     if final_selection:
+        # 按成交量排序
+        final_selection = sorted(final_selection, key=lambda x: x['vol'], reverse=True)
         target_ids = [s['id'] for s in final_selection]
+        
         with open('targets.txt', 'w') as f:
             f.write('\n'.join(target_ids))
         
-        msg = f"📊 {today_str} 盤後爆量選股摘要\n"
+        msg = f"📊 {target_date.strftime('%m/%d')} 盤後爆量精選\n"
         msg += "------------------\n"
         for s in final_selection:
             msg += f"🔹 {s['id']} {s['name']}\n"
@@ -92,11 +105,9 @@ def main():
             msg += f"   成交量: {s['vol']}張\n"
         
         send_alert(msg)
-        print(f"✅ 成功選出 {len(final_selection)} 檔，已發送 LINE/Discord。")
+        print(f"✅ 成功選出 {len(final_selection)} 檔標的")
     else:
-        send_alert(f"📊 {today_str} 選股結束：無符合爆量條件標的。")
-        with open('targets.txt', 'w') as f:
-            f.write('')
+        print("今日無符合條件標的。")
 
 if __name__ == "__main__":
     main()
