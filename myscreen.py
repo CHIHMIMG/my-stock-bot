@@ -1,105 +1,94 @@
-import pandas as pd
 import yfinance as yf
-from FinMind.data import DataLoader
 import requests
-import datetime
+import os
+import pandas as pd
+from datetime import datetime
 
 # --- 設定區 ---
 LINE_ACCESS_TOKEN = 'ODDI4pyqjUMem+HvWIj3MtiWZ6wxpnU43avaxvIX3d0slVswYKayOk3lBmuM5zeF6umMABnbJho5RK3+4GrERAxIbVQvYUJtNQ9c45gS8FzNR8/YqbKD4Fdyx+G4gHfdGrQmTSK2X9QhYLQhkHyyPgdB04t89/1O/w1cDnyilFU='
 LINE_USER_ID = 'U8b817b96fca9ea9a0f22060544a01573'
 DISCORD_WEBHOOK_URL = 'https://discordapp.com/api/webhooks/1455572127095848980/uyuzoVxMm-y3KWas2bLUPPAq7oUftAZZBzwEmnCAjkw54ZyPebn8M-6--woFB-Eh7fDL'
 
-VOL_THRESHOLD = 6000  # 成交量門檻：6000張
-VOL_RATIO = 1.5       # 量增倍數：1.5倍
-PRICE_LIMIT = 100     # 股價門檻：100元以下
-
-def send_notifications(msg):
-    """發送通知到 Discord 與 LINE"""
+def send_alert(msg):
+    """發送警報至 Discord 與 LINE"""
     try:
-        requests.post(DISCORD_WEBHOOK_URL, json={"content": msg}, timeout=20)
+        requests.post(DISCORD_WEBHOOK_URL, json={"content": msg}, timeout=15)
     except:
         pass
-    
     url = 'https://api.line.me/v2/bot/message/push'
     headers = {'Content-Type': 'application/json', 'Authorization': f'Bearer {LINE_ACCESS_TOKEN}'}
     payload = {'to': LINE_USER_ID, 'messages': [{'type': 'text', 'text': msg}]}
     try:
-        requests.post(url, headers=headers, json=payload, timeout=20)
+        requests.post(url, headers=headers, json=payload, timeout=15)
     except:
         pass
 
-def screen_stocks():
-    report_time = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
-    print(f"🚀 啟動掃描系統 | 門檻: {PRICE_LIMIT}元以下 | {report_time}")
+def check_breakthrough():
+    if not os.path.exists('targets.txt'):
+        print("找不到 targets.txt")
+        return
+        
+    with open('targets.txt', 'r') as f:
+        targets = [line.strip() for line in f.readlines() if line.strip()]
     
-    dl = DataLoader()
-    stock_info = dl.taiwan_stock_info()
-    unique_list = stock_info[stock_info['stock_id'].str.len() == 4][['stock_id', 'stock_name']].drop_duplicates().values.tolist()
-    
-    hits_msgs = []
-    hits_sids = set()
-    
-    for sid, name in unique_list:
+    if not targets:
+        print("監控清單目前為空。")
+        return
+        
+    still_watching = set()
+    report_time = datetime.now().strftime('%Y-%m-%d %H:%M')
+    print(f"⏰ 執行監控 (排除今日爆量): {report_time}")
+
+    for sid in targets:
         try:
-            # 💡 修正：確保 sid 是純數字，不帶後綴
             clean_sid = sid.strip()
-            
-            # 優先下載上市
+            # 下載數據
+            df = yf.download(f"{clean_sid}.TW", period="15d", progress=False, auto_adjust=False, multi_level_index=False)
             market_type = "TWSE"
-            df = yf.download(f"{clean_sid}.TW", period="65d", progress=False, auto_adjust=False, multi_level_index=False)
-            
-            # 若無則抓上櫃
-            if df.empty or len(df) < 20:
-                df = yf.download(f"{clean_sid}.TWO", period="65d", progress=False, auto_adjust=False, multi_level_index=False)
+            if df.empty or len(df) < 10:
+                df = yf.download(f"{clean_sid}.TWO", period="15d", progress=False, auto_adjust=False, multi_level_index=False)
                 market_type = "OTC"
             
-            if df.empty: continue
+            if df.empty:
+                still_watching.add(clean_sid)
+                continue
 
-            today_data = df.iloc[-1]
-            yesterday_data = df.iloc[-2]
-            
-            close_price = float(today_data['Close'])
-            yesterday_close = float(yesterday_data['Close'])
-            today_vol = float(today_data['Volume']) / 1000 
-            yesterday_vol = float(yesterday_data['Volume']) / 1000
-            
-            ma5 = df['Close'].rolling(5).mean().iloc[-1]
-            ma20 = df['Close'].rolling(20).mean().iloc[-1]
-            ma60 = df['Close'].rolling(60).mean().iloc[-1]
+            current_price = float(df['Close'].iloc[-1])
+            today_vol = int(df['Volume'].iloc[-1] / 1000)
 
-            if (close_price <= PRICE_LIMIT and
-                today_vol >= VOL_THRESHOLD and 
-                today_vol >= (yesterday_vol * VOL_RATIO) and 
-                close_price >= max(ma5, ma20, ma60)):
+            # --- 核心邏輯：從昨日往回找 3 天 (排除今日索引 -1) ---
+            support_price = None
+            found_date = ""
+
+            # i=2(昨), 3(前), 4(大前)
+            for i in range(2, 5): 
+                vol_target = df['Volume'].iloc[-i]
+                vol_prev = df['Volume'].iloc[-i-1]
                 
-                p_percent = ((close_price - yesterday_close) / yesterday_close) * 100
-                icon = "🔴" if p_percent > 0 else "🟢"
-                growth = round(today_vol / yesterday_vol, 1)
-                
-                # 💡 修正：TradingView 連結必須是 市場:純數字
+                if vol_target >= (vol_prev * 1.5):
+                    support_price = float(df['Low'].iloc[-i])
+                    found_date = df.index[-i].strftime('%m/%d')
+                    break 
+            
+            if support_price and current_price < support_price:
                 tv_url = f"https://tw.tradingview.com/chart/?symbol={market_type}:{clean_sid}"
+                msg = (f"🚨 跌破爆量支撐：{clean_sid}\n"
+                       f"💰 現價 {current_price:.2f} < {found_date} 低點 {support_price:.2f}\n"
+                       f"📊 今日量：{today_vol}張\n"
+                       f"🔗 線圖：{tv_url}")
+                send_alert(msg)
+                print(f"🚨 {clean_sid} 觸發！跌破 {found_date} 支撐")
+            else:
+                still_watching.add(clean_sid)
+                status = f"支撐({found_date}):{support_price}" if support_price else "無爆量支撐"
+                print(f"✅ {clean_sid} 正常 (現價:{current_price} | {status})")
                 
-                res = (f"{icon} {clean_sid} {name}\n"
-                       f"💰 股價: {close_price:.2f} ({p_percent:+.2f}%)\n"
-                       f"📊 成交: {int(today_vol)}張 ({growth}x)\n"
-                       f"🔗 線圖: {tv_url}\n")
-                
-                hits_msgs.append(res)
-                hits_sids.add(clean_sid)
-
-        except Exception:
-            continue
-            
+        except Exception as e:
+            still_watching.add(sid)
+        
+    # 修正最後一行的寫入邏輯
     with open('targets.txt', 'w') as f:
-        f.write('\n'.join(sorted(list(hits_sids))))
-    
-    if hits_msgs:
-        header = f"🔥 【台股爆量轉強名單】\n⏰ {report_time}\n篩選: {PRICE_LIMIT}元以下\n" + "─" * 15 + "\n"
-        for i in range(0, len(hits_msgs), 5):
-            chunk = "\n".join(hits_msgs[i:i + 5])
-            send_notifications(header + chunk if i == 0 else chunk)
-    else:
-        print("今日無符合標的。")
+        f.write('\n'.join(sorted(list(still_watching))))
 
 if __name__ == "__main__":
-    screen_stocks()
+    check_breakthrough()
