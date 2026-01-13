@@ -33,7 +33,6 @@ def save_sent_list(sent_set):
 def main():
     print(f"🚀 啟動【全市場】精準掃描: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     
-    # 1. 取得全台股資訊
     dl = DataLoader()
     stock_info = dl.taiwan_stock_info()
     df_valid = stock_info[(stock_info['stock_id'].str.len() == 4) & 
@@ -42,13 +41,13 @@ def main():
     name_dict = dict(zip(df_valid['stock_id'], df_valid['stock_name']))
     sent_list = get_sent_list()
     
-    # 2. 下載即時數據
     tw_symbols = [f"{sid}.TW" for sid in df_valid['stock_id']]
     two_symbols = [f"{sid}.TWO" for sid in df_valid['stock_id']]
 
-    print(f"📥 正在下載上市/上櫃數據 (含 5000 張門檻過濾)...")
-    data_tw = yf.download(tw_symbols, period="2d", interval="1d", group_by='ticker', progress=False, threads=True)
-    data_two = yf.download(two_symbols, period="2d", interval="1d", group_by='ticker', progress=False, threads=True)
+    print(f"📥 正在同步下載數據...")
+    # 強制抓取最近 3 天數據確保對齊日期
+    data_tw = yf.download(tw_symbols, period="3d", interval="1d", group_by='ticker', progress=False, threads=True)
+    data_two = yf.download(two_symbols, period="3d", interval="1d", group_by='ticker', progress=False, threads=True)
 
     hits = []
     
@@ -67,36 +66,41 @@ def main():
         if df.empty or len(df) < 2: continue
         
         try:
-            y_vol = df['Volume'].iloc[-2]
-            t_vol = df['Volume'].iloc[-1]
+            # 去除無效數據行
+            df = df.dropna(subset=['Volume', 'Close'])
+            if len(df) < 2: continue
+            
+            # 取得數值
+            y_vol = df['Volume'].iloc[-2] # 昨日成交量(股)
+            t_vol = df['Volume'].iloc[-1] # 今日成交量(股)
             t_high = df['High'].iloc[-1]
             t_close = df['Close'].iloc[-1]
             
-            if pd.isna(y_vol) or y_vol == 0: continue
+            # 換算為張數 (1張 = 1000股)
+            t_vol_lots = int(t_vol / 1000)
+            y_vol_lots = int(y_vol / 1000)
 
-            # --- 綜合判斷邏輯 ---
-            # 1. 爆量倍數 (1.5倍)
-            vol_ratio = t_vol / y_vol
-            # 2. 高點回落幅度 (4%)
+            # 門檻判斷
+            vol_ratio = t_vol / y_vol if y_vol > 0 else 0
             drop_ratio = (t_high - t_close) / t_high if t_high > 0 else 0
-            # 3. 今日成交量門檻 (至少 5000 張)
-            # yfinance 的 Volume 單位是「股」，所以 5000 張 = 5,000,000 股
-            today_volume_shares = t_vol
-            
-            if vol_ratio >= 1.5 and drop_ratio >= 0.04 and today_volume_shares >= 5000000:
+
+            # 特別偵測正達做紀錄，確認數據是否對齊
+            if sid == "3149":
+                print(f"DEBUG [3149 正達]: 今日 {t_vol_lots}張, 昨日 {y_vol_lots}張, 倍數 {vol_ratio:.2f}, 回落 {drop_ratio*100:.1f}%")
+
+            if vol_ratio >= 1.5 and drop_ratio >= 0.04 and t_vol_lots >= 5000:
                 hits.append({
                     'id': sid, 
                     'name': name_dict.get(sid, "未知"), 
                     'price': t_close, 
                     'high': t_high, 
-                    'vol': int(today_volume_shares / 1000), # 轉為張數顯示
+                    'vol': t_vol_lots, 
                     'drop': round(drop_ratio * 100, 1), 
                     'vol_x': round(vol_ratio, 1)
                 })
                 sent_list.add(sid)
         except: continue
 
-    # 3. 發送報告
     if hits:
         hits = sorted(hits, key=lambda x: x['drop'], reverse=True)
         msg = f"⚠️ 【全市場爆量上引線警報】\n⏰ {datetime.now().strftime('%m/%d %H:%M')}\n門檻: 爆量1.5x / 回落4% / 量>5000張\n"
@@ -111,9 +115,9 @@ def main():
         
         send_alert(msg)
         save_sent_list(sent_list)
-        print(f"✅ 命中 {len(hits)} 檔符合大成交量條件標的")
+        print(f"✅ 成功發送警報，命中 {len(hits)} 檔。")
     else:
-        print("ℹ️ 掃描完畢，目前無符合 5000 張且回落之標的。")
+        print("ℹ️ 掃描完畢，目前無符合標的。")
 
 if __name__ == "__main__":
     main()
