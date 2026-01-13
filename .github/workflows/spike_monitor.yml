@@ -2,19 +2,25 @@ name: Spike_Shadow_Monitor
 
 on:
   schedule:
-    - cron: '*/10 1-6 * * 1-5'
+    # 台灣時間週一至週五 09:10 - 13:50，每 10 分鐘執行
+    - cron: "*/10 1,2,3,4,5 * * 1-5"
   workflow_dispatch:
 
 jobs:
-  check-spike:
+  spike-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - name: Install Libs
-        run: pip install yfinance pandas requests FinMind
-      - name: Run Scan
+
+      - name: Install dependencies
+        # 💡 重點：手動補上 tqdm 這個缺失的套件
+        run: |
+          pip install yfinance pandas requests FinMind tqdm
+
+      - name: Run Spike Scan
         run: python spike_scan_all.py
