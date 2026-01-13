@@ -36,23 +36,17 @@ def main():
     # 1. 取得全台股資訊
     dl = DataLoader()
     stock_info = dl.taiwan_stock_info()
-    
-    # 過濾：只取 4 碼代號、排除金融股
     df_valid = stock_info[(stock_info['stock_id'].str.len() == 4) & 
                           (~stock_info['industry_category'].str.contains('金融'))].copy()
     
     name_dict = dict(zip(df_valid['stock_id'], df_valid['stock_name']))
     sent_list = get_sent_list()
     
-    # 2. 分批建立下載清單 (為了避免 KeyError，我們嘗試對所有代號都下載上市與上櫃後再過濾)
-    # 這裡採用更穩健的方法：將所有代號加入清單，並透過下載後的結果自動過濾
+    # 2. 下載即時數據
     tw_symbols = [f"{sid}.TW" for sid in df_valid['stock_id']]
     two_symbols = [f"{sid}.TWO" for sid in df_valid['stock_id']]
 
-    print(f"📥 正在下載即時數據 (這需要一點時間)...")
-    
-    # 💡 關鍵：分兩大批下載，避免 yfinance 下載錯誤
-    # 使用 multi_level_index=False 簡化表格結構
+    print(f"📥 正在下載上市/上櫃數據 (含 5000 張門檻過濾)...")
     data_tw = yf.download(tw_symbols, period="2d", interval="1d", group_by='ticker', progress=False, threads=True)
     data_two = yf.download(two_symbols, period="2d", interval="1d", group_by='ticker', progress=False, threads=True)
 
@@ -61,7 +55,6 @@ def main():
     for sid in df_valid['stock_id']:
         if sid in sent_list: continue
         
-        # 嘗試從上市數據或上櫃數據中抓取資料
         ticker_tw = f"{sid}.TW"
         ticker_two = f"{sid}.TWO"
         
@@ -74,7 +67,6 @@ def main():
         if df.empty or len(df) < 2: continue
         
         try:
-            # 取得昨日與今日數據
             y_vol = df['Volume'].iloc[-2]
             t_vol = df['Volume'].iloc[-1]
             t_high = df['High'].iloc[-1]
@@ -82,17 +74,22 @@ def main():
             
             if pd.isna(y_vol) or y_vol == 0: continue
 
-            # --- 核心邏輯判斷 ---
+            # --- 綜合判斷邏輯 ---
+            # 1. 爆量倍數 (1.5倍)
             vol_ratio = t_vol / y_vol
+            # 2. 高點回落幅度 (4%)
             drop_ratio = (t_high - t_close) / t_high if t_high > 0 else 0
-
-            # 門檻：量增 1.5x 且 回落 4%
-            if vol_ratio >= 1.5 and drop_ratio >= 0.04:
+            # 3. 今日成交量門檻 (至少 5000 張)
+            # yfinance 的 Volume 單位是「股」，所以 5000 張 = 5,000,000 股
+            today_volume_shares = t_vol
+            
+            if vol_ratio >= 1.5 and drop_ratio >= 0.04 and today_volume_shares >= 5000000:
                 hits.append({
                     'id': sid, 
                     'name': name_dict.get(sid, "未知"), 
                     'price': t_close, 
                     'high': t_high, 
+                    'vol': int(today_volume_shares / 1000), # 轉為張數顯示
                     'drop': round(drop_ratio * 100, 1), 
                     'vol_x': round(vol_ratio, 1)
                 })
@@ -102,20 +99,21 @@ def main():
     # 3. 發送報告
     if hits:
         hits = sorted(hits, key=lambda x: x['drop'], reverse=True)
-        msg = f"⚠️ 【全市場爆量上引線警報】\n⏰ {datetime.now().strftime('%m/%d %H:%M')}\n門檻: 量增 1.5x / 回落 4%\n"
+        msg = f"⚠️ 【全市場爆量上引線警報】\n⏰ {datetime.now().strftime('%m/%d %H:%M')}\n門檻: 爆量1.5x / 回落4% / 量>5000張\n"
         msg += "─" * 15 + "\n"
         for h in hits[:15]:
             msg += f"🔹 {h['id']} {h['name']}\n"
             msg += f"   💰 現價:{h['price']:.2f} (高點:{h['high']:.2f})\n"
+            msg += f"   📊 今日總量: {h['vol']} 張\n"
             msg += f"   📉 高點回落:{h['drop']}% | 🔥量增:{h['vol_x']}倍\n"
             msg += f"   🔗 https://tw.tradingview.com/chart/?symbol=TWSE:{h['id']}\n"
             msg += "─" * 10 + "\n"
         
         send_alert(msg)
         save_sent_list(sent_list)
-        print(f"✅ 成功發送警報，命中 {len(hits)} 檔標的。")
+        print(f"✅ 命中 {len(hits)} 檔符合大成交量條件標的")
     else:
-        print("ℹ️ 掃描完畢，目前市場無符合標的。")
+        print("ℹ️ 掃描完畢，目前無符合 5000 張且回落之標的。")
 
 if __name__ == "__main__":
     main()
