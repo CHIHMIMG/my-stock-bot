@@ -1,0 +1,20 @@
+name: Spike_Shadow_Monitor
+
+on:
+  schedule:
+    - cron: '*/10 1-6 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  check-spike:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install Libs
+        run: pip install yfinance pandas requests FinMind
+      - name: Run Scan
+        run: python spike_scan_all.py
