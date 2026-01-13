@@ -31,58 +31,64 @@ def save_sent_list(sent_set):
         f.write('\n'.join(list(sent_set)))
 
 def main():
-    print(f"🚀 啟動【全市場】爆量上引線掃描: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"🚀 啟動【全市場】精準掃描: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     
     dl = DataLoader()
     stock_info = dl.taiwan_stock_info()
-    mask = (stock_info['stock_id'].str.len() == 4) & (~stock_info['industry_category'].str.contains('金融'))
-    valid_stocks = stock_info[mask].copy()
-    name_dict = dict(zip(valid_stocks['stock_id'], valid_stocks['stock_name']))
+    # 過濾：4碼代號、非金融
+    df_valid = stock_info[(stock_info['stock_id'].str.len() == 4) & 
+                          (~stock_info['industry_category'].str.contains('金融'))].copy()
     
-    symbols = [f"{sid}.TW" for sid in valid_stocks['stock_id']] + [f"{sid}.TWO" for sid in valid_stocks['stock_id']]
+    name_dict = dict(zip(df_valid['stock_id'], df_valid['stock_name']))
     sent_list = get_sent_list()
     
-    print(f"📥 下載數據中 (共 {len(valid_stocks)} 檔)...")
-    data = yf.download(symbols, period="2d", interval="1d", group_by='ticker', progress=False, threads=True)
-
-    hits = []
-    print("🔎 正在分析符合條件的標的...")
+    # 💡 改良：分開上市與上櫃清單，避免 yfinance 找不到資料
+    tw_list = [f"{sid}.TW" for sid in df_valid[df_valid['market_type']=='twse']['stock_id']]
+    two_list = [f"{sid}.TWO" for sid in df_valid[df_valid['market_type']=='otc']['stock_id']]
     
-    for sid in valid_stocks['stock_id']:
+    print(f"📥 正在下載上市 {len(tw_list)} 檔 / 上櫃 {len(two_list)} 檔數據...")
+    
+    # 分兩批下載
+    data_tw = yf.download(tw_list, period="2d", interval="1d", group_by='ticker', progress=False, threads=True)
+    data_two = yf.download(two_list, period="2d", interval="1d", group_by='ticker', progress=False, threads=True)
+
+    # 合併數據字典
+    all_data = {**data_tw.to_dict(orient='dict'), **data_two.to_dict(orient='dict')}
+    
+    hits = []
+    
+    for sid, name in name_dict.items():
         if sid in sent_list: continue
         try:
-            df = data[f"{sid}.TW"]
-            if df.empty or df['Volume'].iloc[-1] == 0:
-                df = data[f"{sid}.TWO"]
+            # 根據市場類型選取正確的 DataFrame
+            ticker = f"{sid}.TW" if f"{sid}.TW" in tw_list else f"{sid}.TWO"
+            df = data_tw[ticker] if ticker in tw_list else data_two[ticker]
             
             if df.empty or len(df) < 2: continue
             
-            yesterday_vol = df['Volume'].iloc[-2]
-            today_vol = df['Volume'].iloc[-1]
-            today_high = df['High'].iloc[-1]
-            today_close = df['Close'].iloc[-1]
+            y_vol = df['Volume'].iloc[-2]
+            t_vol = df['Volume'].iloc[-1]
+            t_high = df['High'].iloc[-1]
+            t_close = df['Close'].iloc[-1]
             
-            if yesterday_vol == 0: continue
+            if y_vol == 0: continue
 
-            vol_ratio = today_vol / yesterday_vol
-            drop_ratio = (today_high - today_close) / today_high if today_high > 0 else 0
+            # --- 邏輯判斷 ---
+            vol_ratio = t_vol / y_vol
+            drop_ratio = (t_high - t_close) / t_high if t_high > 0 else 0
 
-            # 💡 判斷門檻：量增 1.5 倍 且 高點回落 4%
+            # 條件：量增 1.5x 且 回落 4%
             if vol_ratio >= 1.5 and drop_ratio >= 0.04:
                 hits.append({
-                    'id': sid,
-                    'name': name_dict.get(sid, "未知"),
-                    'price': today_close,
-                    'high': today_high,
-                    'drop': round(drop_ratio * 100, 1),
-                    'vol_x': round(vol_ratio, 1)
+                    'id': sid, 'name': name, 'price': t_close, 
+                    'high': t_high, 'drop': round(drop_ratio * 100, 1), 'vol_x': round(vol_ratio, 1)
                 })
                 sent_list.add(sid)
         except: continue
 
     if hits:
         hits = sorted(hits, key=lambda x: x['drop'], reverse=True)
-        msg = f"⚠️ 【全市場爆量上引線警報】\n⏰ {datetime.now().strftime('%m/%d %H:%M')}\n條件: 量增 1.5x & 回落 4%\n"
+        msg = f"⚠️ 【全市場爆量上引線警報】\n⏰ {datetime.now().strftime('%m/%d %H:%M')}\n門檻: 量增 1.5x / 回落 4%\n"
         msg += "─" * 15 + "\n"
         for h in hits[:15]:
             msg += f"🔹 {h['id']} {h['name']}\n"
@@ -93,9 +99,9 @@ def main():
         
         send_alert(msg)
         save_sent_list(sent_list)
-        print(f"✅ 成功命中 {len(hits)} 檔並發送警報。")
+        print(f"✅ 成功命中 {len(hits)} 檔！")
     else:
-        print("ℹ️ 目前市場上無符合標的 (量增 < 1.5x 或 回落 < 4%)。")
+        print("ℹ️ 掃描完畢，目前市場無符合標的。")
 
 if __name__ == "__main__":
     main()
