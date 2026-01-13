@@ -2,25 +2,28 @@ name: Spike_Shadow_Monitor
 
 on:
   schedule:
-    # 台灣時間週一至週五 09:10 - 13:50，每 10 分鐘執行
     - cron: "*/10 1,2,3,4,5 * * 1-5"
   workflow_dispatch:
 
 jobs:
   spike-check:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 💡 必須有權限寫回檔案
     steps:
       - uses: actions/checkout@v3
-
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-
       - name: Install dependencies
-        # 💡 重點：手動補上 tqdm 這個缺失的套件
-        run: |
-          pip install yfinance pandas requests FinMind tqdm
-
+        run: pip install yfinance pandas requests FinMind tqdm
       - name: Run Spike Scan
         run: python spike_scan_all.py
+      - name: Update Sent Cache
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add sent_spikes.txt || echo "no file"
+          git commit -m "update sent spikes [skip ci]" || echo "no changes"
+          git push
