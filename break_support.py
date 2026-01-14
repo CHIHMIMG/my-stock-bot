@@ -29,7 +29,7 @@ def check_breakthrough():
 
     for sid in targets:
         try:
-            # 💡 修正 1：自動輪詢上市(.TW)與上櫃(.TWO)，徹底解決 Quote Not Found
+            # 💡 核心修正 1：自動輪詢上市(.TW)與上櫃(.TWO)，徹底解決 Quote Not Found
             df_now = yf.download(f"{sid}.TW", period="1d", interval="1m", progress=False)
             market = "TWSE"
             if df_now is None or df_now.empty:
@@ -44,7 +44,7 @@ def check_breakthrough():
             # 抓取日線找過去 5 天的支撐位
             df_day = yf.download(f"{sid}.{'TW' if market=='TWSE' else 'TWO'}", period="10d", interval="1d", progress=False)
             
-            # 💡 修正 2：徹底避開 Series 歧義報錯，強制轉為純數值
+            # 💡 核心修正 2：徹底避開 Series 歧義報錯，強制轉為純數值
             last_close = df_now['Close'].iloc[-1]
             if isinstance(last_close, pd.Series):
                 current_price = float(last_close.iloc[0])
@@ -62,7 +62,7 @@ def check_breakthrough():
                     break
             
             if support and current_price < support:
-                msg = f"🚨 【盤中監控】跌破支撐：{sid}\n💰 現價 {current_price:.2f} < {found_date} 支撐 {support:.2f}"
+                msg = f"🚨 【名單監控】跌破支撐：{sid}\n💰 現價 {current_price:.2f} < {found_date} 支撐 {support:.2f}"
                 send_alert(msg)
                 print(f"🚨 {sid} 觸發通知，從清單移除")
             else:
