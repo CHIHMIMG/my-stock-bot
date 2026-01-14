@@ -2,30 +2,37 @@ name: Spike_Shadow_Monitor
 
 on:
   schedule:
-    # 台灣時間 09:10 到 13:50，每 10 分鐘跑一次
-    # UTC 01:10 - 05:50 (台灣時間 = UTC + 8)
-    - cron: "*/10 1-5 * * 1-5"
-  workflow_dispatch: # 讓你可以隨時手動點擊執行測試
+    # 台灣時間週一至週五 09:05 - 13:35，每 5 分鐘掃描一次
+    - cron: "*/5 1-5 * * 1-5"
+  workflow_dispatch: 
 
 jobs:
   spike-check:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write 
     steps:
       - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
+
       - name: Install dependencies
-        run: pip install yfinance pandas requests FinMind tqdm
+        run: pip install yfinance pandas requests FinMind
+
       - name: Run Spike Scan
         run: python spike_scan_all.py
-      - name: Update Sent Cache
+
+      - name: Sync and Update Sent Cache
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add sent_spikes.txt || echo "no file"
-          git commit -m "update sent spikes [skip ci]" || echo "no changes"
-          git push
+          # 先拉取變更防止 Rejected 錯誤
+          git pull --rebase origin main
+          git add sent_spikes.txt
+          git commit -m "Update sent cache [skip ci]" || echo "no changes"
+          git push origin main
