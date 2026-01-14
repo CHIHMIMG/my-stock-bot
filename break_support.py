@@ -4,7 +4,7 @@ import os
 import pandas as pd
 from datetime import datetime
 
-# --- 已套入您的設定 ---
+# --- 已套入您的連線設定 ---
 LINE_ACCESS_TOKEN = 'ODDI4pyqjUMem+HvWIj3MtiWZ6wxpnU43avaxvIX3d0slVswYKayOk3lBmuM5zeF6umMABnbJho5RK3+4GrERAxIbVQvYUJtNQ9c45gS8FzNR8/YqbKD4Fdyx+G4gHfdGrQmTSK2X9QhYLQhkHyyPgdB04t89/1O/w1cDnyilFU='
 LINE_USER_ID = 'U8b817b96fca9ea9a0f22060544a01573'
 DISCORD_WEBHOOK_URL = 'https://discordapp.com/api/webhooks/1455572127095848980/uyuzoVxMm-y3KWas2bLUPPAq7oUftAZZBzwEmnCAjkw54ZyPebn8M-6--woFB-Eh7fDL'
@@ -25,11 +25,11 @@ def check_breakthrough():
     if not targets: return
         
     still_watching = set()
-    print(f"🚀 啟動監控: {datetime.now().strftime('%H:%M:%S')}")
+    print(f"🚀 啟動即時價比對: {datetime.now().strftime('%H:%M:%S')}")
 
     for sid in targets:
         try:
-            # 💡 關鍵修正：自動輪詢上市/上櫃後綴
+            # 💡 核心修正 1：自動輪詢上市/上櫃後綴
             df_now = yf.download(f"{sid}.TW", period="1d", interval="1m", progress=False)
             market = "TWSE"
             if df_now is None or df_now.empty:
@@ -41,12 +41,15 @@ def check_breakthrough():
                 still_watching.add(sid)
                 continue
 
-            # 下載日線尋找過去 5 天的爆量支撐
+            # 抓取日線找過去 5 天的支撐位
             df_day = yf.download(f"{sid}.{'TW' if market=='TWSE' else 'TWO'}", period="10d", interval="1d", progress=False)
             
-            # 💡 關鍵修正：使用 .item() 徹底避開歧義報錯
+            # 💡 核心修正 2：徹底避開 Series 歧義報錯
             last_close = df_now['Close'].iloc[-1]
-            current_price = float(last_close.item()) if hasattr(last_close, 'item') else float(last_close)
+            if isinstance(last_close, pd.Series):
+                current_price = float(last_close.iloc[0])
+            else:
+                current_price = float(last_close)
             
             support = None
             found_date = ""
@@ -61,7 +64,7 @@ def check_breakthrough():
             if support and current_price < support:
                 msg = f"🚨 【盤中監控】跌破支撐：{sid}\n💰 現價 {current_price:.2f} < {found_date} 支撐 {support:.2f}"
                 send_alert(msg)
-                print(f"🚨 {sid} 已發送警報")
+                print(f"🚨 {sid} 觸發通知")
             else:
                 still_watching.add(sid)
                 print(f"✅ {sid} 正常 (現價:{current_price:.2f})")
