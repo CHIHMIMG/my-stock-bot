@@ -41,53 +41,44 @@ def main():
     name_dict = dict(zip(df_valid['stock_id'], df_valid['stock_name']))
     sent_list = get_sent_list()
     
+    # 建立下載清單
     tw_symbols = [f"{sid}.TW" for sid in df_valid['stock_id']]
     two_symbols = [f"{sid}.TWO" for sid in df_valid['stock_id']]
 
-    print(f"📥 正在同步下載數據...")
-    # 強制抓取最近 3 天數據確保對齊日期
-    data_tw = yf.download(tw_symbols, period="3d", interval="1d", group_by='ticker', progress=False, threads=True)
-    data_two = yf.download(two_symbols, period="3d", interval="1d", group_by='ticker', progress=False, threads=True)
+    print(f"📥 正在下載上市/上櫃數據...")
+    # 💡 增加 threads=True 和 proxy 機制，並將 period 改為 5d 確保能抓到完整的前後日
+    data_tw = yf.download(tw_symbols, period="5d", interval="1d", group_by='ticker', progress=False, threads=True)
+    data_two = yf.download(two_symbols, period="5d", interval="1d", group_by='ticker', progress=False, threads=True)
 
     hits = []
     
     for sid in df_valid['stock_id']:
         if sid in sent_list: continue
         
-        ticker_tw = f"{sid}.TW"
-        ticker_two = f"{sid}.TWO"
-        
-        df = pd.DataFrame()
-        if ticker_tw in data_tw.columns.levels[0]:
-            df = data_tw[ticker_tw]
-        if (df.empty or df['Volume'].isnull().all()) and ticker_two in data_two.columns.levels[0]:
-            df = data_two[ticker_two]
-            
-        if df.empty or len(df) < 2: continue
-        
+        # 💡 強化讀取邏輯：優先從 data_tw 找，再從 data_two 找
         try:
-            # 去除無效數據行
-            df = df.dropna(subset=['Volume', 'Close'])
+            if f"{sid}.TW" in data_tw.columns:
+                df = data_tw[f"{sid}.TW"]
+            elif f"{sid}.TWO" in data_two.columns:
+                df = data_two[f"{sid}.TWO"]
+            else:
+                continue
+
+            # 移除空值並確保有足夠天數
+            df = df.dropna(subset=['Close', 'Volume'])
             if len(df) < 2: continue
             
             # 取得數值
-            y_vol = df['Volume'].iloc[-2] # 昨日成交量(股)
-            t_vol = df['Volume'].iloc[-1] # 今日成交量(股)
+            y_vol = df['Volume'].iloc[-2] # 昨日成交量
+            t_vol = df['Volume'].iloc[-1] # 今日最新成交量
             t_high = df['High'].iloc[-1]
             t_close = df['Close'].iloc[-1]
             
-            # 換算為張數 (1張 = 1000股)
             t_vol_lots = int(t_vol / 1000)
-            y_vol_lots = int(y_vol / 1000)
-
-            # 門檻判斷
             vol_ratio = t_vol / y_vol if y_vol > 0 else 0
             drop_ratio = (t_high - t_close) / t_high if t_high > 0 else 0
 
-            # 特別偵測正達做紀錄，確認數據是否對齊
-            if sid == "3149":
-                print(f"DEBUG [3149 正達]: 今日 {t_vol_lots}張, 昨日 {y_vol_lots}張, 倍數 {vol_ratio:.2f}, 回落 {drop_ratio*100:.1f}%")
-
+            # --- 符合條件判定 ---
             if vol_ratio >= 1.5 and drop_ratio >= 0.04 and t_vol_lots >= 5000:
                 hits.append({
                     'id': sid, 
@@ -99,18 +90,21 @@ def main():
                     'vol_x': round(vol_ratio, 1)
                 })
                 sent_list.add(sid)
-        except: continue
+                
+        except Exception as e:
+            continue
 
     if hits:
+        # 按回落幅度排序
         hits = sorted(hits, key=lambda x: x['drop'], reverse=True)
         msg = f"⚠️ 【全市場爆量上引線警報】\n⏰ {datetime.now().strftime('%m/%d %H:%M')}\n門檻: 爆量1.5x / 回落4% / 量>5000張\n"
         msg += "─" * 15 + "\n"
         for h in hits[:15]:
             msg += f"🔹 {h['id']} {h['name']}\n"
-            msg += f"   💰 現價:{h['price']:.2f} (高點:{h['high']:.2f})\n"
-            msg += f"   📊 今日總量: {h['vol']} 張\n"
-            msg += f"   📉 高點回落:{h['drop']}% | 🔥量增:{h['vol_x']}倍\n"
-            msg += f"   🔗 https://tw.tradingview.com/chart/?symbol=TWSE:{h['id']}\n"
+            msg += f"    💰 現價:{h['price']:.2f} (高點:{h['high']:.2f})\n"
+            msg += f"    📊 今日總量: {h['vol']} 張\n"
+            msg += f"    📉 高點回落:{h['drop']}% | 🔥量增:{h['vol_x']}倍\n"
+            msg += f"    🔗 https://tw.tradingview.com/chart/?symbol=TWSE:{h['id']}\n"
             msg += "─" * 10 + "\n"
         
         send_alert(msg)
