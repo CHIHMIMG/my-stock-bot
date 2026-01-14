@@ -2,8 +2,7 @@ name: Spike_Shadow_Monitor
 
 on:
   schedule:
-    # 台灣時間週一至週五 09:05 - 13:35，每 5 分鐘掃描一次
-    - cron: "*/5 1-5 * * 1-5"
+    - cron: "*/5 1-5 * * 1-5" # 台灣時間 09:05 - 13:35，每 5 分鐘掃描
   workflow_dispatch: 
 
 jobs:
@@ -22,7 +21,9 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: pip install yfinance pandas requests FinMind
+        run: |
+          # 💡 加入 tqdm 以防 FinMind 導入失敗
+          pip install yfinance pandas requests FinMind tqdm
 
       - name: Run Spike Scan
         run: python spike_scan_all.py
@@ -31,7 +32,7 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          # 先拉取變更防止 Rejected 錯誤
+          # 💡 解決 Rejected 錯誤關鍵：先拉取變更
           git pull --rebase origin main
           git add sent_spikes.txt
           git commit -m "Update sent cache [skip ci]" || echo "no changes"
