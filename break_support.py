@@ -19,37 +19,41 @@ def send_alert(msg):
     except: pass
 
 def check_breakthrough():
-    if not os.path.exists('targets.txt'): return
+    if not os.path.exists('targets.txt'):
+        print("❌ 找不到 targets.txt")
+        return
+        
     with open('targets.txt', 'r') as f:
         targets = [line.strip() for line in f.readlines() if line.strip()]
-    if not targets: return
+    
+    if not targets:
+        print("ℹ️ 監控清單為空")
+        return
         
     still_watching = set()
-    print(f"🚀 啟動【1分鐘級別】即時監控: {datetime.now().strftime('%H:%M:%S')}")
+    print(f"🚀 啟動【盤後數據比對】偵測: {datetime.now().strftime('%H:%M:%S')}")
 
     for sid in targets:
         try:
-            # 💡 修正：使用更安全的方式檢查下載結果
+            # 💡 修正：自動嘗試上市(.TW)或上櫃(.TWO)
             df_now = yf.download(f"{sid}.TW", period="1d", interval="1m", progress=False)
             market = "TWSE"
-            if df_now is None or df_now.empty:
+            if df_now.empty:
                 df_now = yf.download(f"{sid}.TWO", period="1d", interval="1m", progress=False)
                 market = "OTC"
             
-            if df_now is None or df_now.empty or 'Close' not in df_now.columns:
+            if df_now.empty:
+                print(f"⚠️ {sid} 抓不到數據，跳過")
                 still_watching.add(sid)
                 continue
 
             # 抓取日線找支撐
-            df_day = yf.download(sid + ('.TW' if market == "TWSE" else '.TWO'), period="10d", interval="1d", progress=False)
+            df_day = yf.download(f"{sid}.{'TW' if market=='TWSE' else 'TWO'}", period="10d", interval="1d", progress=False)
             
-            # 💡 修正：徹底解決 Series 歧義報錯
-            last_price_series = df_now['Close'].iloc[-1]
-            if isinstance(last_price_series, pd.Series):
-                current_price = float(last_price_series.iloc[0])
-            else:
-                current_price = float(last_price_series)
+            # 💡 關鍵修正：使用 .item() 確保提取的是單一數值，徹底解決 Truth Value 歧義
+            current_price = float(df_now['Close'].iloc[-1].item()) if hasattr(df_now['Close'].iloc[-1], 'item') else float(df_now['Close'].iloc[-1])
             
+            # 尋找爆量支撐位
             support = None
             found_date = ""
             for i in range(2, 5):
@@ -63,13 +67,13 @@ def check_breakthrough():
             if support and current_price < support:
                 msg = f"🚨 【盤中監控】跌破支撐：{sid}\n💰 現價 {current_price:.2f} < {found_date} 支撐 {support:.2f}"
                 send_alert(msg)
-                print(f"🚨 {sid} 觸發通知")
+                print(f"🚨 {sid} 已觸發警報通知")
             else:
                 still_watching.add(sid)
-                print(f"✅ {sid} 監控中 (現價:{current_price})")
+                print(f"✅ {sid} 正常 (現價:{current_price:.2f})")
+                
         except Exception as e:
-            # 💡 修正：增加錯誤紀錄，幫助偵錯
-            print(f"❌ {sid} 執行錯誤: {str(e)}")
+            print(f"❌ {sid} 比對出錯: {e}")
             still_watching.add(sid)
         
     with open('targets.txt', 'w') as f:
