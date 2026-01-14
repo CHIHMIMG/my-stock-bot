@@ -25,11 +25,11 @@ def check_breakthrough():
     if not targets: return
         
     still_watching = set()
-    print(f"🚀 啟動【盤中即時監控】: {datetime.now().strftime('%H:%M:%S')}")
+    print(f"🚀 啟動監控: {datetime.now().strftime('%H:%M:%S')}")
 
     for sid in targets:
         try:
-            # 💡 修正 1：自動切換上市(.TW)與上櫃(.TWO)，解決 404 錯誤
+            # 💡 修正 1：自動嘗試上市(.TW)與上櫃(.TWO)
             df_now = yf.download(f"{sid}.TW", period="1d", interval="1m", progress=False)
             market = "TWSE"
             if df_now is None or df_now.empty:
@@ -43,13 +43,13 @@ def check_breakthrough():
 
             df_day = yf.download(f"{sid}.{'TW' if market=='TWSE' else 'TWO'}", period="10d", interval="1d", progress=False)
             
-            # 💡 修正 2：使用 .item() 徹底解決 Series 歧義報錯
-            last_price = df_now['Close'].iloc[-1]
-            current_price = float(last_price.item()) if hasattr(last_price, 'item') else float(last_price)
+            # 💡 修正 2：使用更安全的方式讀取數值，避免歧義報錯
+            last_close = df_now['Close'].iloc[-1]
+            current_price = float(last_close.iloc[0]) if isinstance(last_close, pd.Series) else float(last_close)
             
             support = None
             found_date = ""
-            for i in range(2, 5):
+            for i in range(2, 6): # 檢查過去 5 天
                 vol_t = df_day['Volume'].iloc[-i]
                 vol_p = df_day['Volume'].iloc[-i-1]
                 if vol_t >= (vol_p * 1.5):
@@ -60,10 +60,10 @@ def check_breakthrough():
             if support and current_price < support:
                 msg = f"🚨 【盤中監控】跌破支撐：{sid}\n💰 現價 {current_price:.2f} < {found_date} 支撐 {support:.2f}"
                 send_alert(msg)
-                print(f"🚨 {sid} 已觸發通知")
+                print(f"🚨 {sid} 觸發警報！")
             else:
                 still_watching.add(sid)
-                print(f"✅ {sid} 監控中 (價:{current_price:.2f})")
+                print(f"✅ {sid} 監控中 (現價:{current_price:.2f})")
         except Exception as e:
             print(f"❌ {sid} 錯誤: {e}")
             still_watching.add(sid)
