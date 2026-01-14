@@ -1,42 +1,28 @@
 name: Intraday_Support_Monitor
-
 on:
   schedule:
-    # 台灣時間週一至週五 09:05 - 13:35，每 5 分鐘執行一次
-    # (UTC 時間為 01:05 - 05:35)
     - cron: "*/5 1-5 * * 1-5"
-  workflow_dispatch: # 允許在 GitHub 頁面手動點擊執行
-
+  workflow_dispatch:
 jobs:
   monitor-job:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # 重要：必須開啟權限才能寫入並推送 targets.txt
-    
+      contents: write
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
         with:
-          fetch-depth: 0 # 確保抓取完整歷史以利推送
-
+          fetch-depth: 0 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-
-      - name: Install dependencies
-        run: |
-          pip install yfinance pandas requests
-
-      - name: Run Break Support Monitor
-        run: python break_support.py
-
-      - name: Commit and Push changes
+      - run: pip install yfinance pandas requests
+      - run: python break_support.py
+      - name: Sync and Push
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          # 先拉取遠端變更，避免 [rejected] fetch first 錯誤
-          git pull --rebase origin main
+          git pull --rebase origin main  # 💡 關鍵：先拉取變更防止被拒絕
           git add targets.txt
-          git commit -m "Update targets list after alert [skip ci]" || echo "No changes to commit"
+          git commit -m "Update targets [skip ci]" || echo "no changes"
           git push origin main
