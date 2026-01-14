@@ -1,7 +1,7 @@
 name: Intraday_Support_Monitor
 on:
   schedule:
-    - cron: "*/5 1-5 * * 1-5" # 台灣時間 09:05 - 13:35，每 5 分鐘執行一次
+    - cron: "*/5 1-5 * * 1-5" 
   workflow_dispatch:
 jobs:
   monitor-job:
@@ -24,8 +24,8 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          # 💡 核心修正：強制先同步雲端變更，解決 Rejected 錯誤
+          # 💡 核心修正：強制同步雲端變更，防止 rejected 衝突
           git pull --rebase origin main
           git add targets.txt
-          git commit -m "Update sent cache [skip ci]" || echo "no changes"
+          git commit -m "Sync targets [skip ci]" || echo "no changes"
           git push origin main
