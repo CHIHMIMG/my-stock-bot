@@ -25,11 +25,11 @@ def check_breakthrough():
     if not targets: return
         
     still_watching = set()
-    print(f"🚀 啟動監控: {datetime.now().strftime('%H:%M:%S')}")
+    print(f"🚀 啟動【盤中即時監控】: {datetime.now().strftime('%H:%M:%S')}")
 
     for sid in targets:
         try:
-            # 💡 修正 1：自動嘗試上市(.TW)與上櫃(.TWO)
+            # 💡 修正：自動切換上市(.TW)與上櫃(.TWO)，解決 404 錯誤
             df_now = yf.download(f"{sid}.TW", period="1d", interval="1m", progress=False)
             market = "TWSE"
             if df_now is None or df_now.empty:
@@ -43,9 +43,9 @@ def check_breakthrough():
 
             df_day = yf.download(f"{sid}.{'TW' if market=='TWSE' else 'TWO'}", period="10d", interval="1d", progress=False)
             
-            # 💡 修正 2：使用更安全的方式讀取數值，避免歧義報錯
-            last_close = df_now['Close'].iloc[-1]
-            current_price = float(last_close.iloc[0]) if isinstance(last_close, pd.Series) else float(last_close)
+            # 💡 修正：使用更安全的方式提取數值，徹底解決歧義報錯
+            last_price = df_now['Close'].iloc[-1]
+            current_price = float(last_price.iloc[0]) if isinstance(last_price, pd.Series) else float(last_price)
             
             support = None
             found_date = ""
@@ -60,10 +60,10 @@ def check_breakthrough():
             if support and current_price < support:
                 msg = f"🚨 【盤中監控】跌破支撐：{sid}\n💰 現價 {current_price:.2f} < {found_date} 支撐 {support:.2f}"
                 send_alert(msg)
-                print(f"🚨 {sid} 觸發警報！")
+                print(f"🚨 {sid} 已觸發通知")
             else:
                 still_watching.add(sid)
-                print(f"✅ {sid} 監控中 (現價:{current_price:.2f})")
+                print(f"✅ {sid} 監控中 (價:{current_price:.2f})")
         except Exception as e:
             print(f"❌ {sid} 錯誤: {e}")
             still_watching.add(sid)
