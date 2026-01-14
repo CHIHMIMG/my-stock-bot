@@ -1,10 +1,10 @@
-name: Redesigned_Monitor
+name: Redesigned_Intraday_Monitor
 on:
   schedule:
-    - cron: "*/5 1-5 * * 1-5" # 盤中每 5 分鐘執行一次
+    - cron: "*/5 1-5 * * 1-5" 
   workflow_dispatch: 
 jobs:
-  monitor:
+  run-monitor:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -12,23 +12,19 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0 
-
-      - name: Setup Python
+      - name: Setup
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-
       - name: Install
         run: pip install yfinance pandas requests
-
       - name: Run
         run: python break_support.py
-
-      - name: Sync and Push
+      - name: Sync
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git pull --rebase origin main
           git add targets.txt
-          git commit -m "Sync watch list [skip ci]" || echo "no changes"
+          git commit -m "Sync cache" || echo "no changes"
           git push origin main
