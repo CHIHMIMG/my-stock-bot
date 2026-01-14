@@ -1,7 +1,7 @@
 name: Intraday_Support_Monitor
 on:
   schedule:
-    - cron: "*/5 1-5 * * 1-5" # 台灣時間 09:05 - 13:35 每 5 分鐘跑一次
+    - cron: "*/5 1-5 * * 1-5" # 台灣時間 09:05 - 13:35，每 5 分鐘執行一次
   workflow_dispatch:
 jobs:
   monitor-job:
@@ -17,15 +17,15 @@ jobs:
         with:
           python-version: '3.10'
       - name: Install dependencies
-        run: pip install yfinance pandas requests tqdm
+        run: pip install yfinance pandas requests
       - name: Run Monitor
         run: python break_support.py
       - name: Sync and Push
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          # 💡 核心：先 pull --rebase 同步雲端變更，防止 rejected 報錯
+          # 💡 核心修正：強制先同步雲端變更，解決 Rejected 錯誤
           git pull --rebase origin main
           git add targets.txt
-          git commit -m "Update targets list [skip ci]" || echo "no changes"
+          git commit -m "Update sent cache [skip ci]" || echo "no changes"
           git push origin main
