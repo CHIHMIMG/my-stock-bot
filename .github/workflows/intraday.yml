@@ -1,7 +1,7 @@
 name: List_Support_Monitor
 on:
   schedule:
-    - cron: "*/5 1-5 * * 1-5" # 台灣時間 09:05 - 13:35 每 5 分鐘跑一次
+    - cron: "*/5 1-5 * * 1-5" 
   workflow_dispatch: 
 
 jobs:
@@ -29,7 +29,7 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          # 💡 核心修正：先同步雲端變更，防止 rejected 報錯
+          # 💡 解決推送衝突的核心：先強制同步雲端變更
           git pull --rebase origin main
           git add targets.txt
           git commit -m "Update targets list [skip ci]" || echo "no changes"
