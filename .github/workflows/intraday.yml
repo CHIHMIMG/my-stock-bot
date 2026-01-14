@@ -1,28 +1,38 @@
 name: Intraday_Support_Monitor
+
 on:
   schedule:
+    # 台灣時間 09:05 - 13:35，每 5 分鐘執行一次
     - cron: "*/5 1-5 * * 1-5"
-  workflow_dispatch:
+  workflow_dispatch: 
+
 jobs:
   monitor-job:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
         with:
           fetch-depth: 0 
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - run: pip install yfinance pandas requests
-      - run: python break_support.py
-      - name: Sync and Push
+
+      - name: Install dependencies
+        run: pip install yfinance pandas requests
+
+      - name: Run Monitor
+        run: python break_support.py
+
+      - name: Sync and Push changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          # 💡 解決 [rejected] 衝突的關鍵步驟
           git pull --rebase origin main
           git add targets.txt
           git commit -m "Update targets [skip ci]" || echo "no changes"
