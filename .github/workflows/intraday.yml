@@ -1,11 +1,11 @@
-name: Full_Market_Scan
+name: List_Support_Monitor
 on:
   schedule:
-    - cron: "*/15 1-5 * * 1-5" # 台灣時間 09:15 - 13:35，每 15 分鐘掃一次全市場
+    - cron: "*/5 1-5 * * 1-5" # 台灣時間 09:05 - 13:35 每 5 分鐘跑一次
   workflow_dispatch: 
 
 jobs:
-  run-scan:
+  run-monitor:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -20,16 +20,17 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: pip install yfinance pandas requests FinMind tqdm
+        run: pip install yfinance pandas requests
 
-      - name: Run Market Scan
+      - name: Run Monitor
         run: python break_support.py
 
       - name: Sync Cache
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          # 💡 核心修正：先同步雲端變更，防止 rejected 報錯
           git pull --rebase origin main
-          git add sent_alerts.txt
-          git commit -m "Update alert cache [skip ci]" || echo "no changes"
+          git add targets.txt
+          git commit -m "Update targets list [skip ci]" || echo "no changes"
           git push origin main
