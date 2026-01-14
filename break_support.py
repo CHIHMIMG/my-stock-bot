@@ -4,7 +4,7 @@ import os
 import pandas as pd
 from datetime import datetime
 
-# --- 已套入您的設定區 ---
+# --- 您的連線設定 ---
 LINE_ACCESS_TOKEN = 'ODDI4pyqjUMem+HvWIj3MtiWZ6wxpnU43avaxvIX3d0slVswYKayOk3lBmuM5zeF6umMABnbJho5RK3+4GrERAxIbVQvYUJtNQ9c45gS8FzNR8/YqbKD4Fdyx+G4gHfdGrQmTSK2X9QhYLQhkHyyPgdB04t89/1O/w1cDnyilFU='
 LINE_USER_ID = 'U8b817b96fca9ea9a0f22060544a01573'
 DISCORD_WEBHOOK_URL = 'https://discordapp.com/api/webhooks/1455572127095848980/uyuzoVxMm-y3KWas2bLUPPAq7oUftAZZBzwEmnCAjkw54ZyPebn8M-6--woFB-Eh7fDL'
@@ -25,11 +25,11 @@ def check_breakthrough():
     if not targets: return
         
     still_watching = set()
-    print(f"🚀 啟動【盤中即時監控】: {datetime.now().strftime('%H:%M:%S')}")
+    print(f"🚀 啟動即時監控: {datetime.now().strftime('%H:%M:%S')}")
 
     for sid in targets:
         try:
-            # 💡 修正：自動切換上市(.TW)與上櫃(.TWO)，解決 404 錯誤
+            # 💡 修正 1：自動嘗試上市(.TW)與上櫃(.TWO)
             df_now = yf.download(f"{sid}.TW", period="1d", interval="1m", progress=False)
             market = "TWSE"
             if df_now is None or df_now.empty:
@@ -37,15 +37,14 @@ def check_breakthrough():
                 market = "OTC"
             
             if df_now is None or df_now.empty or 'Close' not in df_now.columns:
-                print(f"⚠️ {sid} 抓不到資料")
                 still_watching.add(sid)
                 continue
 
             df_day = yf.download(f"{sid}.{'TW' if market=='TWSE' else 'TWO'}", period="10d", interval="1d", progress=False)
             
-            # 💡 修正：使用更安全的方式提取數值，徹底解決歧義報錯
+            # 💡 修正 2：使用 .item() 徹底解決 Series 歧義報錯
             last_price = df_now['Close'].iloc[-1]
-            current_price = float(last_price.iloc[0]) if isinstance(last_price, pd.Series) else float(last_price)
+            current_price = float(last_price.item()) if hasattr(last_price, 'item') else float(last_price)
             
             support = None
             found_date = ""
@@ -60,12 +59,11 @@ def check_breakthrough():
             if support and current_price < support:
                 msg = f"🚨 【盤中監控】跌破支撐：{sid}\n💰 現價 {current_price:.2f} < {found_date} 支撐 {support:.2f}"
                 send_alert(msg)
-                print(f"🚨 {sid} 已觸發通知")
+                print(f"🚨 {sid} 觸發通知")
             else:
                 still_watching.add(sid)
-                print(f"✅ {sid} 監控中 (價:{current_price:.2f})")
-        except Exception as e:
-            print(f"❌ {sid} 錯誤: {e}")
+                print(f"✅ {sid} 監控中 (現價:{current_price:.2f})")
+        except:
             still_watching.add(sid)
         
     with open('targets.txt', 'w') as f:
