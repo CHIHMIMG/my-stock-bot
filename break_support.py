@@ -19,51 +19,63 @@ def send_alert(msg):
     except: pass
 
 def check_breakthrough():
-    if not os.path.exists('targets.txt'): return
+    if not os.path.exists('targets.txt'):
+        print("找不到 targets.txt")
+        return
+        
     with open('targets.txt', 'r') as f:
         targets = [line.strip() for line in f.readlines() if line.strip()]
-    if not targets: return
+    
+    if not targets:
+        print("監控清單目前為空。")
+        return
         
     still_watching = set()
     print(f"⏰ 啟動【1分鐘級別】即時監控: {datetime.now().strftime('%H:%M:%S')}")
 
     for sid in targets:
         try:
-            # 💡 關鍵修正：同時嘗試上市與上櫃，避免找不到資料
-            df_now = yf.download(f"{sid}.TW", period="1d", interval="1m", progress=False)
-            market = "TWSE"
+            clean_sid = sid.strip()
+            
+            # 1. 下載 1 分鐘線抓即時價 (優先嘗試上市 .TW)
+            df_now = yf.download(f"{clean_sid}.TW", period="1d", interval="1m", progress=False)
+            market_type = "TWSE"
             if df_now.empty:
-                df_now = yf.download(f"{sid}.TWO", period="1d", interval="1m", progress=False)
-                market = "OTC"
+                df_now = yf.download(f"{clean_sid}.TWO", period="1d", interval="1m", progress=False)
+                market_type = "OTC"
             
             if df_now.empty:
-                still_watching.add(sid)
+                still_watching.add(clean_sid)
                 continue
 
-            # 抓取日線找支撐
-            df_day = yf.download(f"{sid}.{'TW' if market=='TWSE' else 'TWO'}", period="10d", interval="1d", progress=False)
+            # 2. 下載日線找過去 3 天的支撐位
+            df_day = yf.download(f"{clean_sid}.{'TW' if market_type=='TWSE' else 'TWO'}", 
+                                 period="10d", interval="1d", progress=False)
             
-            # 💡 修正 Future Warning：改用 iloc[0] 讀取單一數值
-            current_price = float(df_now['Close'].iloc[-1].iloc[0]) if isinstance(df_now['Close'].iloc[-1], pd.Series) else float(df_now['Close'].iloc[-1])
+            current_price = float(df_now['Close'].iloc[-1])
             
-            # 判斷爆量支撐 (過去3天內 1.5倍爆量低點)
-            support = None
+            # 3. 找出爆量支撐 (1.5倍)
+            support_price = None
             found_date = ""
-            for i in range(2, 5):
+            for i in range(2, 5): 
                 if df_day['Volume'].iloc[-i] >= (df_day['Volume'].iloc[-i-1] * 1.5):
-                    support = float(df_day['Low'].iloc[-i])
+                    support_price = float(df_day['Low'].iloc[-i])
                     found_date = df_day.index[-i].strftime('%m/%d')
-                    break
+                    break 
             
-            if support and current_price < support:
-                msg = (f"🚨 【極速警報】跌破支撐：{sid}\n"
-                       f"💰 即時價 {current_price:.2f} < {found_date} 支撐 {support:.2f}")
+            # 4. 判斷跌破
+            if support_price and current_price < support_price:
+                tv_url = f"https://tw.tradingview.com/chart/?symbol={market_type}:{clean_sid}"
+                msg = (f"🚨 【極速監控】跌破支撐：{clean_sid}\n"
+                       f"💰 即時價 {current_price:.2f} < {found_date} 支撐 {support_price:.2f}\n"
+                       f"📊 今日量：{int(df_day['Volume'].iloc[-1]/1000)}張\n"
+                       f"🔗 線圖：{tv_url}")
                 send_alert(msg)
-                print(f"🚨 {sid} 觸發通知")
             else:
-                still_watching.add(sid)
-                print(f"✅ {sid} 監控中 (價:{current_price})")
-        except: still_watching.add(sid)
+                still_watching.add(clean_sid)
+                
+        except:
+            still_watching.add(sid)
         
     with open('targets.txt', 'w') as f:
         f.write('\n'.join(sorted(list(still_watching))))
