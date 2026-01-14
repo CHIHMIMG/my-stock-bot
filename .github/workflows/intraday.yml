@@ -29,7 +29,7 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          # 💡 核心修正：推送前先強制同步雲端變更，防止同步失敗
+          # 💡 推送前先強制同步雲端變更
           git pull --rebase origin main
           git add targets.txt
           git commit -m "Update targets list [skip ci]" || echo "no changes"
