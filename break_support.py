@@ -4,7 +4,7 @@ import os
 import pandas as pd
 from datetime import datetime
 
-# --- 已套入您的連線設定 ---
+# --- 您的連線設定 ---
 LINE_ACCESS_TOKEN = 'ODDI4pyqjUMem+HvWIj3MtiWZ6wxpnU43avaxvIX3d0slVswYKayOk3lBmuM5zeF6umMABnbJho5RK3+4GrERAxIbVQvYUJtNQ9c45gS8FzNR8/YqbKD4Fdyx+G4gHfdGrQmTSK2X9QhYLQhkHyyPgdB04t89/1O/w1cDnyilFU='
 LINE_USER_ID = 'U8b817b96fca9ea9a0f22060544a01573'
 DISCORD_WEBHOOK_URL = 'https://discordapp.com/api/webhooks/1455572127095848980/uyuzoVxMm-y3KWas2bLUPPAq7oUftAZZBzwEmnCAjkw54ZyPebn8M-6--woFB-Eh7fDL'
@@ -29,7 +29,7 @@ def check_breakthrough():
 
     for sid in targets:
         try:
-            # 💡 修正 1：自動輪詢上市(.TW)與上櫃(.TWO)，徹底解決 Quote Not Found
+            # 💡 核心修正 1：自動輪詢上市(.TW)與上櫃(.TWO)，解決截圖中的 404 報錯
             df_now = yf.download(f"{sid}.TW", period="1d", interval="1m", progress=False)
             market = "TWSE"
             if df_now is None or df_now.empty:
@@ -44,9 +44,9 @@ def check_breakthrough():
             # 抓取日線找過去 5 天的支撐位
             df_day = yf.download(f"{sid}.{'TW' if market=='TWSE' else 'TWO'}", period="10d", interval="1d", progress=False)
             
-            # 💡 修正 2：徹底避開 Series 歧義報錯，強制轉為純數值
-            last_val = df_now['Close'].iloc[-1]
-            current_price = float(last_val.iloc[0]) if isinstance(last_val, pd.Series) else float(last_val)
+            # 💡 核心修正 2：強制轉為 float 數值，徹底避開「Series ambiguous」歧義報錯
+            last_close = df_now['Close'].iloc[-1]
+            current_price = float(last_close.iloc[0]) if isinstance(last_close, pd.Series) else float(last_close)
             
             support = None
             found_date = ""
