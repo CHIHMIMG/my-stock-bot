@@ -5,7 +5,7 @@ from datetime import datetime
 from FinMind.data import DataLoader
 import os
 
-# --- 您的設定區 ---
+# --- 設定區 ---
 LINE_ACCESS_TOKEN = 'ODDI4pyqjUMem+HvWIj3MtiWZ6wxpnU43avaxvIX3d0slVswYKayOk3lBmuM5zeF6umMABnbJho5RK3+4GrERAxIbVQvYUJtNQ9c45gS8FzNR8/YqbKD4Fdyx+G4gHfdGrQmTSK2X9QhYLQhkHyyPgdB04t89/1O/w1cDnyilFU='
 LINE_USER_ID = 'U8b817b96fca9ea9a0f22060544a01573'
 DISCORD_WEBHOOK_URL = 'https://discordapp.com/api/webhooks/1455572127095848980/uyuzoVxMm-y3KWas2bLUPPAq7oUftAZZBzwEmnCAjkw54ZyPebn8M-6--woFB-Eh7fDL'
@@ -31,9 +31,7 @@ def save_sent_list(sent_set):
         f.write('\n'.join(list(sent_set)))
 
 def main():
-    print(f"🚀 啟動【全市場】爆量掃描: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    
-    # 💡 修正 KeyError: 'market_type'，改用最穩定的過濾方式
+    print(f"🚀 啟動【全市場】精準掃描: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     dl = DataLoader()
     stock_info = dl.taiwan_stock_info()
     df_valid = stock_info[(stock_info['stock_id'].str.len() == 4) & 
@@ -42,61 +40,42 @@ def main():
     name_dict = dict(zip(df_valid['stock_id'], df_valid['stock_name']))
     sent_list = get_sent_list()
     
-    # 下載數據 (採用分流機制確保資料完整)
-    tw_list = [f"{sid}.TW" for sid in df_valid['stock_id']]
-    two_list = [f"{sid}.TWO" for sid in df_valid['stock_id']]
+    # 分流下載機制
+    tw_symbols = [f"{sid}.TW" for sid in df_valid['stock_id']]
+    two_symbols = [f"{sid}.TWO" for sid in df_valid['stock_id']]
 
-    print(f"📥 下載即時數據中...")
-    data_tw = yf.download(tw_list, period="3d", interval="1d", group_by='ticker', progress=False, threads=True)
-    data_two = yf.download(two_list, period="3d", interval="1d", group_by='ticker', progress=False, threads=True)
+    print(f"📥 正在下載上市/上櫃數據...")
+    data_tw = yf.download(tw_symbols, period="3d", interval="1d", group_by='ticker', progress=False, threads=True)
+    data_two = yf.download(two_symbols, period="3d", interval="1d", group_by='ticker', progress=False, threads=True)
 
     hits = []
     for sid in df_valid['stock_id']:
         if sid in sent_list: continue
         try:
-            # 判斷是上市還是上櫃標的
-            ticker = f"{sid}.TW"
-            df = data_tw[ticker] if ticker in data_tw.columns.levels[0] else data_two[f"{sid}.TWO"]
-            
+            ticker_tw, ticker_two = f"{sid}.TW", f"{sid}.TWO"
+            df = data_tw[ticker_tw] if ticker_tw in data_tw.columns.levels[0] else data_two[ticker_two]
             df = df.dropna(subset=['Volume', 'Close'])
             if len(df) < 2: continue
             
-            y_vol = df['Volume'].iloc[-2]
-            t_vol = df['Volume'].iloc[-1]
-            t_high = df['High'].iloc[-1]
-            t_close = df['Close'].iloc[-1]
+            y_vol, t_vol = df['Volume'].iloc[-2], df['Volume'].iloc[-1]
+            t_high, t_close = df['High'].iloc[-1], df['Close'].iloc[-1]
             
-            # 門檻判斷
             vol_ratio = t_vol / y_vol if y_vol > 0 else 0
             drop_ratio = (t_high - t_close) / t_high if t_high > 0 else 0
             t_vol_lots = int(t_vol / 1000)
 
-            # 條件：量增 1.5x / 回落 4% / 今日量 > 5000張
             if vol_ratio >= 1.5 and drop_ratio >= 0.04 and t_vol_lots >= 5000:
-                hits.append({
-                    'id': sid, 'name': name_dict.get(sid, "未知"), 'price': t_close, 
-                    'high': t_high, 'vol': t_vol_lots, 'drop': round(drop_ratio * 100, 1), 'vol_x': round(vol_ratio, 1)
-                })
+                hits.append({'id': sid, 'name': name_dict.get(sid, "未知"), 'price': t_close, 'high': t_high, 'vol': t_vol_lots, 'drop': round(drop_ratio * 100, 1), 'vol_x': round(vol_ratio, 1)})
                 sent_list.add(sid)
         except: continue
 
     if hits:
         hits = sorted(hits, key=lambda x: x['drop'], reverse=True)
         msg = f"⚠️ 【全市場爆量上引線警報】\n⏰ {datetime.now().strftime('%m/%d %H:%M')}\n門檻: 爆量1.5x / 回落4% / 量>5000張\n"
-        msg += "─" * 15 + "\n"
         for h in hits[:15]:
-            msg += f"🔹 {h['id']} {h['name']}\n"
-            msg += f"   💰 現價:{h['price']:.2f} (高點:{h['high']:.2f})\n"
-            msg += f"   📊 今日總量: {h['vol']} 張\n"
-            msg += f"   📉 高點回落:{h['drop']}% | 🔥量增:{h['vol_x']}倍\n"
-            msg += f"   🔗 https://tw.tradingview.com/chart/?symbol=TWSE:{h['id']}\n"
-            msg += "─" * 10 + "\n"
-        
+            msg += f"🔹 {h['id']} {h['name']}\n   💰 現價:{h['price']:.2f} (高點:{h['high']:.2f})\n   📊 今日總量: {h['vol']} 張\n   📉 回落:{h['drop']}% | 🔥量增:{h['vol_x']}x\n"
         send_alert(msg)
         save_sent_list(sent_list)
-        print(f"✅ 成功發送警報，命中 {len(hits)} 檔標的。")
-    else:
-        print("ℹ️ 掃描完畢，目前無符合標的。")
 
 if __name__ == "__main__":
     main()
