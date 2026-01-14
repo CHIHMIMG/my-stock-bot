@@ -1,8 +1,9 @@
 name: Intraday_Support_Monitor
 on:
   schedule:
-    - cron: "*/5 1-5 * * 1-5" # 台灣時間 09:05 - 13:35 每 5 分鐘執行
-  workflow_dispatch:
+    - cron: "*/5 1-5 * * 1-5" # 台灣時間 09:05 - 13:35，每 5 分鐘執行一次
+  workflow_dispatch: 
+
 jobs:
   monitor-job:
     runs-on: ubuntu-latest
@@ -12,22 +13,24 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0 
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
+
       - name: Install dependencies
-        run: |
-          # 💡 確保安裝所有必要依賴，防止報錯
-          pip install yfinance pandas requests tqdm FinMind
+        run: pip install yfinance pandas requests
+
       - name: Run Monitor
         run: python break_support.py
-      - name: Sync and Push
+
+      - name: Sync and Push changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          # 💡 解決 [rejected] 衝突：先同步雲端變更
+          # 💡 解決 Rejected 錯誤關鍵：推送前先拉取遠端版本
           git pull --rebase origin main
           git add targets.txt
-          git commit -m "Sync targets cache [skip ci]" || echo "no changes"
+          git commit -m "Update targets cache [skip ci]" || echo "no changes"
           git push origin main
