@@ -29,7 +29,7 @@ def check_breakthrough():
 
     for sid in targets:
         try:
-            # 💡 核心修正 1：自動輪詢上市(.TW)與上櫃(.TWO)，解決截圖中的 404 報錯
+            # 💡 核心修正 1：自動輪詢上市(.TW)與上櫃(.TWO)，解決 404 報錯
             df_now = yf.download(f"{sid}.TW", period="1d", interval="1m", progress=False)
             market = "TWSE"
             if df_now is None or df_now.empty:
@@ -37,16 +37,19 @@ def check_breakthrough():
                 market = "OTC"
             
             if df_now is None or df_now.empty or 'Close' not in df_now.columns:
-                print(f"⚠️ {sid} 抓不到數據")
+                print(f"⚠️ {sid} 下載失敗，跳過此標的")
                 still_watching.add(sid)
                 continue
 
             # 抓取日線找過去 5 天的支撐位
             df_day = yf.download(f"{sid}.{'TW' if market=='TWSE' else 'TWO'}", period="10d", interval="1d", progress=False)
             
-            # 💡 核心修正 2：強制轉為 float 數值，徹底避開「Series ambiguous」歧義報錯
+            # 💡 核心修正 2：強制轉為純數值，徹底避開「Series ambiguous」報錯
             last_close = df_now['Close'].iloc[-1]
-            current_price = float(last_close.iloc[0]) if isinstance(last_close, pd.Series) else float(last_close)
+            if isinstance(last_close, pd.Series):
+                current_price = float(last_close.iloc[0])
+            else:
+                current_price = float(last_close)
             
             support = None
             found_date = ""
