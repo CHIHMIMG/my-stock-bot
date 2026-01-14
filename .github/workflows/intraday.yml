@@ -24,8 +24,8 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          # 💡 核心修正：強制同步雲端變更，防止 rejected 衝突
+          # 💡 核心修正 3：推送前先強制同步
           git pull --rebase origin main
           git add targets.txt
-          git commit -m "Sync targets [skip ci]" || echo "no changes"
+          git commit -m "Update targets [skip ci]" || echo "no changes"
           git push origin main
