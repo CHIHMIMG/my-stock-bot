@@ -1,4 +1,4 @@
-name: Redesigned_Intraday_Monitor
+name: Ultimate_Monitor
 on:
   schedule:
     - cron: "*/5 1-5 * * 1-5" 
@@ -26,5 +26,5 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git pull --rebase origin main
           git add targets.txt
-          git commit -m "Sync cache" || echo "no changes"
+          git commit -m "Update" || echo "no changes"
           git push origin main
