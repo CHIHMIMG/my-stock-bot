@@ -1,7 +1,7 @@
 import yfinance as yf
 import requests
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 from FinMind.data import DataLoader
 import os
 import time
@@ -24,22 +24,38 @@ def send_alert(msg):
     except: pass
 
 def main():
-    print(f"🚀 啟動【全市場長上引線】最高成功率模式: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"🚀 啟動【精選強勢股】上引線掃描: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    dl = DataLoader()
     
+    # 1. 取得基本名單並排除金融股
+    stock_info = dl.taiwan_stock_info()
+    df_info = stock_info[(stock_info['stock_id'].str.len() == 4) & 
+                         (~stock_info['industry_category'].str.contains('金融'))].copy()
+    
+    # 2. 取得今日成交資訊進行初步過濾 (過濾 股價>20, 成交量>6000)
+    # 注意：盤中時 FinMind 的成交量為即時參考
     try:
-        dl = DataLoader()
-        stock_info = dl.taiwan_stock_info()
-        # 僅保留 4 位數代碼且排除金融股
-        df_valid = stock_info[(stock_info['stock_id'].str.len() == 4) & 
-                              (~stock_info['industry_category'].str.contains('金融'))].copy()
-        name_dict = dict(zip(df_valid['stock_id'], df_valid['stock_name']))
-        ids = df_valid['stock_id'].tolist()
-        total_count = len(ids)
-        print(f"📋 預計掃描總數: {total_count} 檔標的")
+        # 抓取最近一個交易日的成交數據
+        today_str = datetime.now().strftime('%Y-%m-%d')
+        df_price = dl.taiwan_stock_daily_prev_views(date=today_str)
+        
+        # 合併篩選條件
+        valid_ids = df_price[
+            (df_price['close'] >= 20) & 
+            (df_price['vol'] >= 6000) # FinMind 的 vol 通常是張數
+        ]['stock_id'].tolist()
+        
+        # 最終監控名單 = 非金融股 且 符合量價條件
+        final_list = [sid for sid in df_info['stock_id'].tolist() if sid in valid_ids]
+        name_dict = dict(zip(df_info['stock_id'], df_info['stock_name']))
+        
+        print(f"✅ 過濾完成！監控標的已從 {len(stock_info)} 縮減至 {len(final_list)} 檔。")
     except Exception as e:
-        print(f"❌ 無法取得名單: {e}")
-        return
+        print(f"⚠️ 預篩選失敗 (可能未開盤)，將執行全名單掃描。錯誤: {e}")
+        final_list = df_info['stock_id'].tolist()
+        name_dict = dict(zip(df_info['stock_id'], df_info['stock_name']))
 
+    # 讀取快取
     sent_list = set()
     if os.path.exists(CACHE_FILE):
         with open(CACHE_FILE, 'r') as f:
@@ -47,74 +63,56 @@ def main():
 
     hits = []
     
-    # 💡 終極優化：極小批次(5檔)，徹底降低被擋機率
-    batch_size = 5
-    for i in range(0, total_count, batch_size):
-        batch = ids[i:i+batch_size]
-        progress = round((i / total_count) * 100, 1)
-        print(f"⏳ 進度: {progress}% | 正在掃描: {batch}")
-        
+    # 3. 開始掃描
+    batch_size = 15 # 因為總量變少，批次可以稍微調大一點
+    for i in range(0, len(final_list), batch_size):
+        batch = final_list[i:i+batch_size]
         tickers = [f"{sid}.TW" for sid in batch] + [f"{sid}.TWO" for sid in batch]
         
         try:
-            # 隨機長休息 3~6 秒，模擬真人行為
-            time.sleep(random.uniform(3.0, 6.0))
-            
-            # 使用單線程模式 (threads=False) 以提高穩定性
-            data = yf.download(tickers, period="3d", interval="1d", group_by='ticker', progress=False, threads=False)
+            time.sleep(random.uniform(1.5, 3.0)) # 保持適度禮貌
+            data = yf.download(tickers, period="2d", interval="1d", group_by='ticker', progress=False)
             
             for sid in batch:
                 if sid in sent_list: continue
-                
                 ticker = f"{sid}.TW"
-                if ticker not in data.columns.levels[0] or data[ticker].dropna(subset=['Close']).empty:
+                if ticker not in data.columns.levels[0] or data[ticker].dropna().empty:
                     ticker = f"{sid}.TWO"
                 
                 if ticker not in data.columns.levels[0]: continue
                 
-                df = data[ticker].dropna(subset=['Volume', 'High', 'Close'])
+                df = data[ticker].dropna()
                 if len(df) < 2: continue
                 
-                # 取得數值並確保格式
-                try:
-                    t_vol = float(df['Volume'].iloc[-1])
-                    y_vol = float(df['Volume'].iloc[-2])
-                    t_high = float(df['High'].iloc[-1])
-                    t_close = float(df['Close'].iloc[-1])
-                    
-                    vol_ratio = t_vol / y_vol if y_vol > 0 else 0
-                    drop_ratio = (t_high - t_close) / t_high if t_high > 0 else 0
-                    t_vol_lots = int(t_vol / 1000)
+                t_vol = float(df['Volume'].iloc[-1])
+                y_vol = float(df['Volume'].iloc[-2])
+                t_high = float(df['High'].iloc[-1])
+                t_close = float(df['Close'].iloc[-1])
+                
+                vol_ratio = t_vol / y_vol if y_vol > 0 else 0
+                drop_ratio = (t_high - t_close) / t_high if t_high > 0 else 0
+                t_vol_lots = int(t_vol / 1000)
 
-                    # 篩選門檻：爆量1.5x / 回落4% / 量>5000張
-                    if vol_ratio >= 1.5 and drop_ratio >= 0.04 and t_vol_lots >= 5000:
-                        hits.append({
-                            'id': sid, 'name': name_dict.get(sid, "未知"), 
-                            'price': t_close, 'high': t_high, 
-                            'vol': t_vol_lots, 'drop': round(drop_ratio * 100, 1),
-                            'vol_x': round(vol_ratio, 1)
-                        })
-                        sent_list.add(sid)
-                        print(f"🎯 命中標的: {sid} {name_dict.get(sid)}")
-                except: continue
-                    
-        except Exception as e:
-            print(f"⚠️ 遇到錯誤或限制，休息 15 秒: {e}")
-            time.sleep(15)
-            continue
+                # 警報門檻 (可根據需求微調)
+                if vol_ratio >= 1.5 and drop_ratio >= 0.04:
+                    hits.append({
+                        'id': sid, 'name': name_dict.get(sid, "未知"), 
+                        'price': t_close, 'high': t_high, 
+                        'vol': t_vol_lots, 'drop': round(drop_ratio * 100, 1), 'vol_x': round(vol_ratio, 1)
+                    })
+                    sent_list.add(sid)
+        except: continue
 
-    # 發送通知
+    # 4. 發送警報
     if hits:
         hits = sorted(hits, key=lambda x: x['drop'], reverse=True)
-        msg = f"⚠️ 【全市場長上引線警報 - 高精準版】\n⏰ {datetime.now().strftime('%m/%d %H:%M')}\n"
+        msg = f"⚠️ 【精選爆量回落通知】\n篩選: 股價>20 / 量>6000 / 非金融\n"
         for h in hits[:15]:
-            msg += f"🔹 {h['id']} {h['name']}\n   現價:{h['price']:.2f} (回落:{h['drop']}%)\n   總量:{h['vol']}張 | ⚡量增:{h['vol_x']}x\n"
-        
+            msg += f"🔹 {h['id']} {h['name']}\n   價:{h['price']:.2f} (回:{h['drop']}%)\n   量:{h['vol']}張 | ⚡增:{h['vol_x']}x\n"
         send_alert(msg)
-        with open(CACHE_FILE, 'w') as f:
-            f.write('\n'.join(list(sent_list)))
+        with open(CACHE_FILE, 'w') as f: f.write('\n'.join(list(sent_list)))
     else:
-        print("✅ 全市場掃描完成，未發現符合條件之爆量回落標的。")
+        print("✅ 掃描完畢，目前無符合條件標的。")
 
 if __name__ == "__main__":
     main()
