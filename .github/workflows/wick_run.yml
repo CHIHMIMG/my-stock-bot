@@ -1,11 +1,9 @@
 name: Full_Market_Wick_Scan
 on:
   schedule:
-    # 💡 台灣時間 (UTC+8) 盤中監控排程：
-    # 01:20 UTC = 09:20 TW
-    # 每 20 分鐘執行一次，涵蓋 09:20 - 13:40
-    - cron: "20,40 1-5 * * 1-5" 
-    - cron: "0 2-5 * * 1-5"
+    # 💡 台灣時間 (UTC+8) 09:05 - 13:35 每 5 分鐘執行一次
+    # UTC 01:05-05:35 對應台灣 09:05-13:35
+    - cron: "5/5 1-5 * * 1-5"
   workflow_dispatch: # 允許手動點擊執行測試
 jobs:
   run-scan:
@@ -22,17 +20,19 @@ jobs:
           
       - name: Install dependencies
         run: |
+          # 這裡維持安裝必要的套件，確保執行環境穩定
           pip install yfinance pandas requests FinMind tqdm
           
-      - name: Run Efficient Scan
-        # 執行剛才更新過的「精簡過濾版」程式
+      - name: Run Precision Scan
+        # 執行我們剛才強化過、確保成交量與價格準確的程式
         run: python wick_scan.py
         
       - name: Sync Cache to GitHub
+        # 這裡非常重要：確保已通知過的股票不會在 5 分鐘後又報一次洗版
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git pull --rebase origin main
           git add sent_wick_spikes.txt || echo "no cache"
-          git commit -m "Update wick scan cache" || echo "no changes"
+          git commit -m "Update scan cache" || echo "no changes"
           git push origin main
